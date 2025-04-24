@@ -11,21 +11,52 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Serve static files from the current directory
+// Serve static files with proper MIME types
+app.use(express.static(__dirname, {
+    setHeaders: (res, filePath) => {
+        if (filePath.endsWith('.js')) {
+            res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
+        }
+        if (filePath.endsWith('.css')) {
+            res.setHeader('Content-Type', 'text/css; charset=UTF-8');
+        }
+    }
+}));
+
+app.use('/node_modules', express.static(path.join(__dirname, 'node_modules')));
+
+// Serve other static files
 app.use(express.static(__dirname));
 
 // Initialize mongoose if MongoDB URI is available
 let mongoose, Project, Model;
+/* Commenting out MongoDB initialization
 if (process.env.MONGODB_URI) {
   mongoose = require('mongoose');
   
   // MongoDB connection
   mongoose.connect(process.env.MONGODB_URI, {
     useNewUrlParser: true,
-    useUnifiedTopology: true
+    useUnifiedTopology: true,
+    serverSelectionTimeoutMS: 5000 // Timeout after 5s instead of 30s
   })
-  .then(() => console.log('MongoDB connected'))
-  .catch(err => console.warn('MongoDB connection error:', err.message));
+  .then(() => {
+    console.log('MongoDB connected successfully');
+  })
+  .catch(err => {
+    console.error('MongoDB connection error:', err.message);
+    console.log('Continuing without MongoDB - using fallback data');
+  });
+
+  // Add connection error handler
+  mongoose.connection.on('error', err => {
+    console.error('MongoDB connection error:', err);
+  });
+
+  // Add disconnection handler
+  mongoose.connection.on('disconnected', () => {
+    console.log('MongoDB disconnected');
+  });
 
   // Define MongoDB schemas and models
   const projectSchema = new mongoose.Schema({
@@ -48,6 +79,8 @@ if (process.env.MONGODB_URI) {
 } else {
   console.warn('MongoDB URI not provided. Database functionality will be limited.');
 }
+*/
+console.log('Using fallback data - MongoDB disabled');
 
 // Initialize S3 if credentials are available
 let s3, bucketName, multer, upload;
@@ -65,6 +98,17 @@ if (process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY) {
   });
 
   bucketName = process.env.S3_BUCKET || 'xeokit-models';
+
+  // Test S3 connection
+  s3.listBuckets().promise()
+    .then(data => {
+      console.log('S3 connection successful');
+      console.log('Available buckets:', data.Buckets.map(b => b.Name).join(', '));
+    })
+    .catch(err => {
+      console.error('S3 connection error:', err.message);
+      console.log('Continuing without S3 - file upload functionality will be limited');
+    });
 
   // Configure Multer for file uploads
   multer = require('multer');
@@ -293,6 +337,28 @@ app.delete('/api/modeldata/models/:modelId', async (req, res) => {
   }
 });
 
+// List all XKT files in the bucket
+app.get('/api/modeldata/xkt-files', async (req, res) => {
+    try {
+        if (!s3) {
+            return res.status(500).json({ error: 'S3 not configured' });
+        }
+
+        const data = await s3.listObjectsV2({
+            Bucket: process.env.S3_BUCKET,
+            MaxKeys: 1000  // Adjust based on how many files you expect
+        }).promise();
+
+        // Then filter for .xkt files
+        const xktFiles = data.Contents.filter(file => file.Key.endsWith('.xkt'));
+
+        res.json(xktFiles);
+    } catch (error) {
+        console.error('Error listing XKT files:', error);
+        res.status(500).json({ error: 'Failed to list XKT files' });
+    }
+});
+
 // Serve index.html for the root route
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
@@ -300,6 +366,6 @@ app.get('/', (req, res) => {
 
 // Start the server
 app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Open http://localhost:${PORT} in your browser`);
-}); 
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Open http://localhost:${PORT} in your browser`);
+});

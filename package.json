@@ -5,12 +5,14 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "nodemon server.js"
+    "dev": "nodemon server.js",
+    "debug": "node --inspect server.js"
   },
   "engines": {
     "node": ">=14.0.0"
   },
   "dependencies": {
+    "@xeokit/xeokit-sdk": "^2.6.75",
     "aws-sdk": "^2.1458.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -20,5 +22,8 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
-  }
-} 
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
