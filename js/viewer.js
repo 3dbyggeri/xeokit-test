@@ -7,52 +7,20 @@ const viewer = new Viewer({
     transparent: true
 });
 
-// Initialize XKT loader
+// Add XKT loader
 const xktLoader = new XKTLoaderPlugin(viewer);
 
-// Initialize model selectors
+// Get DOM elements
 const projectSelect = document.getElementById('projectSelect');
 const modelSelect = document.getElementById('modelSelect');
 
 // Create state for storing loaded model
 let loadedModel = null;
 
-// Function to load and display a model
-async function loadModel(xktUrl) {
-    try {
-        // Show loading status
-        console.log(`Loading model from ${xktUrl}`);
-        
-        // Clear any existing model
-        if (loadedModel) {
-            loadedModel.destroy();
-            loadedModel = null;
-        }
-        
-        // Load new model
-        loadedModel = await xktLoader.load({
-            id: "model",
-            src: xktUrl,
-            edges: true
-        });
-        
-        // Fit model to view
-        viewer.cameraFlight.flyTo({
-            aabb: loadedModel.aabb,
-            duration: 1
-        });
-        
-        console.log("Model loaded successfully");
-    } catch (error) {
-        console.error("Error loading model:", error);
-        alert("Failed to load model. Please try another model.");
-    }
-}
-
-// Initialize projects dropdown
+// Initialize projects
 function initializeProjects() {
-    // Add single project option
-    projectSelect.innerHTML = '<option value="default">Default Project</option>';
+    // Set single project option
+    projectSelect.innerHTML = '<option value="xeokit-storage-2">xeokit-storage-2</option>';
     
     // Load models for the default project
     loadModelsForProject();
@@ -63,35 +31,65 @@ async function loadModelsForProject() {
     try {
         // Show loading indicator
         modelSelect.innerHTML = '<option value="">Loading models...</option>';
-        
+
         // Fetch models from API
         const response = await fetch('/api/modeldata/xkt-files');
         if (!response.ok) {
             throw new Error(`Failed to fetch models: ${response.status}`);
         }
+
+        const s3Objects = await response.json();
         
-        const models = await response.json();
-        
+        // Transform S3 objects into model list
+        const models = s3Objects
+            .filter(obj => obj.Key.endsWith('.xkt'))
+            .map(obj => ({
+                id: obj.ETag.replace(/"/g, ''),
+                name: obj.Key.split('/').pop(),
+                url: `https://xeokit-storage-2.s3.pl-waw.scw.cloud/${obj.Key}`
+            }));
+
         // Populate models dropdown
-        modelSelect.innerHTML = models.map(model => 
+        modelSelect.innerHTML = models.map(model =>
             `<option value="${model.url}">${model.name}</option>`
         ).join('');
-        
+
         // Load first model if available
         if (models.length > 0) {
             loadModel(models[0].url);
         }
+
     } catch (error) {
         console.error('Error loading models:', error);
         modelSelect.innerHTML = '<option value="">Error loading models</option>';
     }
 }
 
-// Event listeners
-projectSelect.addEventListener('change', loadModelsForProject);
+// Load selected model
+async function loadModel(src) {
+    try {
+        // Clear any existing models
+        viewer.scene.models.forEach(model => {
+            viewer.scene.removeModel(model.id);
+        });
 
-modelSelect.addEventListener('change', () => {
-    const selectedUrl = modelSelect.value;
+        // Load new model
+        const model = await xktLoader.load({
+            src: src
+        });
+
+        viewer.scene.setObjectsVisible(true);
+        viewer.scene.setObjectsXRayed(false);
+        viewer.cameraFlight.flyTo(model);
+
+    } catch (error) {
+        console.error('Error loading model:', error);
+    }
+}
+
+// Event listeners
+modelSelect.addEventListener('change', (event) => {
+    const selectedUrl = event.target.value;
     if (selectedUrl) {
         loadModel(selectedUrl);
     }
@@ -138,8 +136,8 @@ viewer.scene.input.on("mouseclicked", (coords) => {
     }
 });
 
-// Start the application
-document.addEventListener('DOMContentLoaded', initializeProjects);
+// Initialize
+initializeProjects();
 
 // Export viewer for use in other modules
 export { viewer }; 
