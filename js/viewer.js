@@ -70,14 +70,15 @@ async function loadModel(src) {
     try {
         // Clear any existing models
         if (loadedModel) {
-            viewer.scene.removeModel(loadedModel.id);
+            loadedModel.destroy();
             loadedModel = null;
         }
 
         // Load new model
         loadedModel = await xktLoader.load({
             id: "model",
-            src: src
+            src: src,
+            edges: true
         });
 
         viewer.scene.setObjectsVisible(true);
