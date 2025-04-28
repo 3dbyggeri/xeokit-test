@@ -12,7 +12,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Serve static files with proper MIME types
-app.use(express.static(__dirname, {
+app.use(express.static(path.join(__dirname, 'wwwroot'), {
     setHeaders: (res, filePath) => {
         if (filePath.endsWith('.js')) {
             res.setHeader('Content-Type', 'application/javascript; charset=UTF-8');
@@ -25,7 +25,7 @@ app.use(express.static(__dirname, {
 
 app.use('/node_modules', express.static(path.join(__dirname, 'node_modules')));
 
-// Serve other static files
+// Serve other static files from root directory for compatibility
 app.use(express.static(__dirname));
 
 // Initialize mongoose if MongoDB URI is available
@@ -385,7 +385,7 @@ app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
 
 // Serve index.html for the root route
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'wwwroot', 'index.html'));
 });
 
 // Start the server
