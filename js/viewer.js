@@ -46,7 +46,7 @@ async function loadModelsForProject() {
             .map(obj => ({
                 id: obj.ETag.replace(/"/g, ''),
                 name: obj.Key.split('/').pop(),
-                url: `https://xeokit-storage-2.s3.pl-waw.scw.cloud/${obj.Key}`
+                url: `/api/modeldata/xkt/${encodeURIComponent(obj.Key)}`
             }));
 
         // Populate models dropdown
@@ -69,18 +69,20 @@ async function loadModelsForProject() {
 async function loadModel(src) {
     try {
         // Clear any existing models
-        viewer.scene.models.forEach(model => {
-            viewer.scene.removeModel(model.id);
-        });
+        if (loadedModel) {
+            viewer.scene.removeModel(loadedModel.id);
+            loadedModel = null;
+        }
 
         // Load new model
-        const model = await xktLoader.load({
+        loadedModel = await xktLoader.load({
+            id: "model",
             src: src
         });
 
         viewer.scene.setObjectsVisible(true);
         viewer.scene.setObjectsXRayed(false);
-        viewer.cameraFlight.flyTo(model);
+        viewer.cameraFlight.flyTo(loadedModel);
 
     } catch (error) {
         console.error('Error loading model:', error);

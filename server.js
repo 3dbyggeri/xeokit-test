@@ -359,6 +359,30 @@ app.get('/api/modeldata/xkt-files', async (req, res) => {
     }
 });
 
+// Proxy endpoint for XKT files
+app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
+    try {
+        const key = decodeURIComponent(req.params.key);
+        
+        // Get the object from S3
+        const s3Object = await s3.getObject({
+            Bucket: process.env.S3_BUCKET,
+            Key: key
+        }).promise();
+
+        // Set appropriate headers
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Length', s3Object.ContentLength);
+        
+        // Send the file data
+        res.send(s3Object.Body);
+
+    } catch (error) {
+        console.error('Error fetching XKT file:', error);
+        res.status(500).json({ error: 'Error fetching XKT file' });
+    }
+});
+
 // Serve index.html for the root route
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
