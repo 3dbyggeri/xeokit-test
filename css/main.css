@@ -103,7 +103,9 @@ canvas {
     display: none;
 }
 #metadataBox.collapsed {
-    height: 40px;
+    height: 36px; /* Just enough for the header */
+    min-height: unset;
+    max-height: unset;
     overflow: hidden;
 }
 #metadataHeader {

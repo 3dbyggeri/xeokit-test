@@ -24,6 +24,10 @@ let modelLegend = null;
 // Use the actual MongoDB document ID for your modeldata document
 const MODEL_MONGODB_ID = "681519b9d5fee12ef76934c9";
 
+// Track last selected and highlighted entity IDs
+let lastSelectedId = null;
+let lastHighlightedId = null;
+
 // Initialize projects
 function initializeProjects() {
     // Set single project option
@@ -137,15 +141,23 @@ viewer.scene.input.on("mouseclicked", (coords) => {
     const metadataTable = document.querySelector('#metadataTable tbody');
     metadataTable.innerHTML = '';
 
-    // Clear previous highlights and selection
-    viewer.scene.setObjectsHighlighted({});
-    viewer.scene.setObjectsSelected([], false);
+    // Deselect and unhighlight previous
+    if (lastSelectedId) {
+        viewer.scene.setObjectsSelected([lastSelectedId], false);
+    }
+    if (lastHighlightedId) {
+        viewer.scene.setObjectsHighlighted({ [lastHighlightedId]: false });
+    }
+    lastSelectedId = null;
+    lastHighlightedId = null;
 
     if (hit && modelProperties && modelLegend) {
         const entity = hit.entity;
-        // Select and highlight the entity
+        // Set new selection and highlight
         viewer.scene.setObjectsSelected([entity.id], true);
         viewer.scene.setObjectsHighlighted({ [entity.id]: true });
+        lastSelectedId = entity.id;
+        lastHighlightedId = entity.id;
         console.log('Highlighting and selecting entity:', entity.id);
         // Extract elementId from entity.id (e.g., Surface[105545] => 105545)
         const match = entity.id.match(/\[(\d+)\]/);
@@ -184,10 +196,12 @@ viewer.scene.input.on("mouseclicked", (coords) => {
             metadataTable.appendChild(idRow);
         }
     } else if (hit) {
-        // Select and highlight the entity even if no properties loaded
+        // Set new selection and highlight even if no properties loaded
         const entity = hit.entity;
         viewer.scene.setObjectsSelected([entity.id], true);
         viewer.scene.setObjectsHighlighted({ [entity.id]: true });
+        lastSelectedId = entity.id;
+        lastHighlightedId = entity.id;
         console.log('Highlighting and selecting entity:', entity.id);
         // Show entity ID if no properties loaded
         const idRow = document.createElement('tr');
@@ -198,8 +212,14 @@ viewer.scene.input.on("mouseclicked", (coords) => {
         metadataTable.appendChild(idRow);
     } else {
         // Clear highlighting and selection when clicking empty space
-        viewer.scene.setObjectsHighlighted({});
-        viewer.scene.setObjectsSelected([], false);
+        if (lastSelectedId) {
+            viewer.scene.setObjectsSelected([lastSelectedId], false);
+        }
+        if (lastHighlightedId) {
+            viewer.scene.setObjectsHighlighted({ [lastHighlightedId]: false });
+        }
+        lastSelectedId = null;
+        lastHighlightedId = null;
         console.log('Highlights and selection cleared');
     }
 });
