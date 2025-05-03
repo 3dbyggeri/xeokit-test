@@ -31,8 +31,13 @@ app.use(express.static(__dirname));
 
 // Initialize mongoose if MongoDB URI is available
 let Project, Model;
-if (process.env.MONGODB_URI) {
-    mongoose.connect(process.env.MONGODB_URI, {
+const MONGODB_URI = process.env.MONGODB_URI || process.env.SCALINGO_MONGO_URL;
+
+console.log('process.env.MONGODB_URI:', JSON.stringify(process.env.MONGODB_URI));
+console.log('process.env.SCALINGO_MONGO_URL:', JSON.stringify(process.env.SCALINGO_MONGO_URL));
+
+if (MONGODB_URI) {
+    mongoose.connect(MONGODB_URI, {
         useNewUrlParser: true,
         useUnifiedTopology: true
     })
