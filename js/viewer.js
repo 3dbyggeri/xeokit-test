@@ -17,6 +17,13 @@ const modelSelect = document.getElementById('modelSelect');
 // Create state for storing loaded model
 let loadedModel = null;
 
+// Store loaded properties and legend
+let modelProperties = null;
+let modelLegend = null;
+
+// Use the actual MongoDB document ID for your modeldata document
+const MODEL_MONGODB_ID = "681519b9d5fee12ef76934c9";
+
 // Initialize projects
 function initializeProjects() {
     // Set single project option
@@ -85,6 +92,17 @@ async function loadModel(src) {
         viewer.scene.setObjectsXRayed(false);
         viewer.cameraFlight.flyTo(loadedModel);
 
+        // Fetch properties and legend from backend
+        const propRes = await fetch(`/api/modeldata/properties/${MODEL_MONGODB_ID}`);
+        if (propRes.ok) {
+            const propData = await propRes.json();
+            modelProperties = propData.properties;
+            modelLegend = propData.legend;
+        } else {
+            modelProperties = null;
+            modelLegend = null;
+        }
+
     } catch (error) {
         console.error('Error loading model:', error);
     }
@@ -98,44 +116,91 @@ modelSelect.addEventListener('change', (event) => {
     }
 });
 
+// Restore highlighting and add collapse functionality
+document.addEventListener('DOMContentLoaded', () => {
+    // Collapse panel functionality using header
+    const metadataHeader = document.getElementById('metadataHeader');
+    const metadataBox = document.getElementById('metadataBox');
+    if (metadataHeader && metadataBox) {
+        metadataHeader.addEventListener('click', () => {
+            metadataBox.classList.toggle('collapsed');
+        });
+    }
+});
+
 // Initialize object click handling
 viewer.scene.input.on("mouseclicked", (coords) => {
     const hit = viewer.scene.pick({
         canvasPos: coords
     });
     
-    if (hit) {
+    const metadataTable = document.querySelector('#metadataTable tbody');
+    metadataTable.innerHTML = '';
+
+    // Clear previous highlights and selection
+    viewer.scene.setObjectsHighlighted({});
+    viewer.scene.setObjectsSelected([], false);
+
+    if (hit && modelProperties && modelLegend) {
         const entity = hit.entity;
-        console.log("Entity clicked:", entity.id);
-        
-        // Highlight the clicked entity
-        viewer.scene.setObjectsHighlighted({[entity.id]: true});
-        
-        // Show entity properties in metadata panel
-        const metadataTable = document.querySelector('#metadataTable tbody');
-        metadataTable.innerHTML = '';
-        
-        // Show entity ID
+        // Select and highlight the entity
+        viewer.scene.setObjectsSelected([entity.id], true);
+        viewer.scene.setObjectsHighlighted({ [entity.id]: true });
+        console.log('Highlighting and selecting entity:', entity.id);
+        // Extract elementId from entity.id (e.g., Surface[105545] => 105545)
+        const match = entity.id.match(/\[(\d+)\]/);
+        const elementId = match ? match[1] : null;
+        if (elementId && modelProperties[elementId]) {
+            const props = modelProperties[elementId];
+            // Log selection
+            console.log('Entity selected:', entity.id);
+            console.log('Properties:', props);
+            // Map property indices to names using legend
+            Object.entries(props).forEach(([key, value]) => {
+                let propName = key;
+                if (modelLegend[key] && modelLegend[key].Name) {
+                    propName = modelLegend[key].Name;
+                }
+                let displayValue;
+                if (value !== null && typeof value === 'object') {
+                    displayValue = JSON.stringify(value);
+                } else {
+                    displayValue = value;
+                }
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${propName}</td>
+                    <td>${displayValue}</td>
+                `;
+                metadataTable.appendChild(row);
+            });
+        } else {
+            // Show entity ID if no properties found
+            const idRow = document.createElement('tr');
+            idRow.innerHTML = `
+                <td>ID</td>
+                <td>${entity.id}</td>
+            `;
+            metadataTable.appendChild(idRow);
+        }
+    } else if (hit) {
+        // Select and highlight the entity even if no properties loaded
+        const entity = hit.entity;
+        viewer.scene.setObjectsSelected([entity.id], true);
+        viewer.scene.setObjectsHighlighted({ [entity.id]: true });
+        console.log('Highlighting and selecting entity:', entity.id);
+        // Show entity ID if no properties loaded
         const idRow = document.createElement('tr');
         idRow.innerHTML = `
             <td>ID</td>
             <td>${entity.id}</td>
         `;
         metadataTable.appendChild(idRow);
-        
-        // Get entity properties if available
-        const props = entity.userData || {};
-        Object.entries(props).forEach(([key, value]) => {
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>${key}</td>
-                <td>${value}</td>
-            `;
-            metadataTable.appendChild(row);
-        });
     } else {
-        // Clear highlighting when clicking empty space
+        // Clear highlighting and selection when clicking empty space
         viewer.scene.setObjectsHighlighted({});
+        viewer.scene.setObjectsSelected([], false);
+        console.log('Highlights and selection cleared');
     }
 });
 

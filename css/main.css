@@ -97,4 +97,15 @@ canvas {
 
 .no-select {
     user-select: none;
+}
+
+#metadataBox.collapsed #metadataContent {
+    display: none;
+}
+#metadataBox.collapsed {
+    height: 40px;
+    overflow: hidden;
+}
+#metadataHeader {
+    user-select: none;
 } 
