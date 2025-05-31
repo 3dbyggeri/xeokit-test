@@ -371,18 +371,32 @@ app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
 const ModelDataSchema = new mongoose.Schema({}, { strict: false });
 const ModelData = mongoose.model('ModelData', ModelDataSchema, 'modeldata'); // Replace with your actual collection name
 
-// Endpoint to fetch properties and legend for a given model ID
-app.get('/api/modeldata/properties/:modelId', async (req, res) => {
+// Endpoint to fetch properties and legend for a given model name
+app.get('/api/modeldata/properties/:modelName', async (req, res) => {
     try {
-        const modelId = req.params.modelId;
-        const doc = await ModelData.findById(modelId);
+        const modelName = req.params.modelName;
+        const doc = await ModelData.findOne({
+            "ProjectInfo.Main.ProjectInfor.ModelName": modelName
+        });
+        
         if (!doc) {
-            return res.status(404).json({ error: 'Model data not found' });
+            return res.status(404).json({ 
+                error: 'Model data not found',
+                message: `No model found with name: ${modelName}`
+            });
         }
-        res.json({ properties: doc.Properties, legend: doc.Legend });
+        
+        res.json({ 
+            properties: doc.Properties, 
+            legend: doc.Legend,
+            modelId: doc._id // Include the model ID in response for reference
+        });
     } catch (err) {
         console.error('Error fetching model properties:', err);
-        res.status(500).json({ error: 'Failed to fetch model properties' });
+        res.status(500).json({ 
+            error: 'Failed to fetch model properties',
+            message: err.message 
+        });
     }
 });
 

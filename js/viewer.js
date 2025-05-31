@@ -21,12 +21,12 @@ let loadedModel = null;
 let modelProperties = null;
 let modelLegend = null;
 
-// Use the actual MongoDB document ID for your modeldata document
-const MODEL_MONGODB_ID = "681519b9d5fee12ef76934c9";
-
 // Track last selected and highlighted entity IDs
 let lastSelectedId = null;
 let lastHighlightedId = null;
+
+// Store current model name
+let currentModelName = null;
 
 // Initialize projects
 function initializeProjects() {
@@ -85,6 +85,10 @@ async function loadModel(src) {
             loadedModel = null;
         }
 
+        // Extract and decode model name from URL, removing /xktmodel/ part
+        const fileName = decodeURIComponent(src.split('/').pop()); // Get the last part of URL and decode it
+        currentModelName = fileName.split('/').pop().replace('.xkt', '.rvt'); // Get last part after any remaining / and replace extension
+        
         // Load new model
         loadedModel = await xktLoader.load({
             id: "model",
@@ -96,19 +100,29 @@ async function loadModel(src) {
         viewer.scene.setObjectsXRayed(false);
         viewer.cameraFlight.flyTo(loadedModel);
 
-        // Fetch properties and legend from backend
-        const propRes = await fetch(`/api/modeldata/properties/${MODEL_MONGODB_ID}`);
-        if (propRes.ok) {
-            const propData = await propRes.json();
-            modelProperties = propData.properties;
-            modelLegend = propData.legend;
+        if (currentModelName) {
+            // Fetch properties and legend from backend using model name
+            const propRes = await fetch(`/api/modeldata/properties/${encodeURIComponent(currentModelName)}`);
+            if (propRes.ok) {
+                const propData = await propRes.json();
+                modelProperties = propData.properties;
+                modelLegend = propData.legend;
+                console.log('Loaded properties for model:', currentModelName);
+            } else {
+                console.warn('Failed to load properties for model:', currentModelName);
+                modelProperties = null;
+                modelLegend = null;
+            }
         } else {
+            console.warn('Could not extract model name from URL');
             modelProperties = null;
             modelLegend = null;
         }
 
     } catch (error) {
         console.error('Error loading model:', error);
+        modelProperties = null;
+        modelLegend = null;
     }
 }
 
