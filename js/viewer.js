@@ -96,6 +96,12 @@ async function loadModel(src) {
             edges: true
         });
 
+        // Fit camera to the entire model
+        viewer.cameraFlight.flyTo({
+            aabb: viewer.scene.getAABB(),
+            duration: 0.5
+        });
+
         viewer.scene.setObjectsVisible(true);
         viewer.scene.setObjectsXRayed(false);
         viewer.cameraFlight.flyTo(loadedModel);
