@@ -56,7 +56,7 @@ async function loadModelsForProject() {
             .filter(obj => obj.Key.endsWith('.xkt'))
             .map(obj => ({
                 id: obj.ETag.replace(/"/g, ''),
-                name: obj.Key.split('/').pop(),
+                name: obj.name || obj.Key.split('/').pop().replace(/\.xkt$/i, ''), // Use 'name' from backend if available
                 url: `/api/modeldata/xkt/${encodeURIComponent(obj.Key)}`
             }));
 

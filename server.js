@@ -333,8 +333,17 @@ app.get('/api/modeldata/xkt-files', async (req, res) => {
             MaxKeys: 1000  // Adjust based on how many files you expect
         }).promise();
 
-        // Then filter for .xkt files
-        const xktFiles = data.Contents.filter(file => file.Key.endsWith('.xkt'));
+        // Filter for .xkt files
+        let xktFiles = data.Contents.filter(file => file.Key.endsWith('.xkt'));
+
+        // Sort by LastModified descending (latest first)
+        xktFiles.sort((a, b) => new Date(b.LastModified) - new Date(a.LastModified));
+
+        // Add a 'name' property without the .xkt extension
+        xktFiles = xktFiles.map(file => ({
+            ...file,
+            name: file.Key.split('/').pop().replace(/\.xkt$/i, '')
+        }));
 
         res.json(xktFiles);
     } catch (error) {
