@@ -7,6 +7,8 @@ import { FirstPersonMode } from "./FirstPersonMode.js";
 import { ShowSpacesMode } from "./ShowSpacesMode.js";
 import { SelectionTool } from "./SelectionTool.js";
 import { HideTool } from "./HideTool.js";
+import { MarqueeSelectionTool } from "./MarqueeSelectionTool.js";
+import { XRayTool } from "./XRayTool.js";
 import { MeasureDistanceTool } from "./MeasureDistanceTool.js";
 import { MeasureAngleTool } from "./MeasureAngleTool.js";
 
@@ -80,12 +82,18 @@ class Toolbar extends Controller {
                     <!-- Selection tool -->
                     <button type="button" class="xeokit-select xeokit-btn fa fa-mouse-pointer fa-2x"
                             data-tippy-content="Select objects" title="Select objects"></button>
+                    <!-- Marquee selection tool -->
+                    <button type="button" class="xeokit-marquee xeokit-btn fa fa-object-group fa-2x"
+                            data-tippy-content="Marquee select objects" title="Marquee select objects"></button>
                     <!-- Hide tool -->
                     <button type="button" class="xeokit-hide xeokit-btn fa fa-eye-slash fa-2x"
                             data-tippy-content="Hide objects" title="Hide objects"></button>
                     <!-- Show all button -->
                     <button type="button" class="xeokit-showAll xeokit-btn fa fa-eye fa-2x"
                             data-tippy-content="Show all objects" title="Show all objects"></button>
+                    <!-- X-ray toggle tool -->
+                    <button type="button" class="xeokit-xray xeokit-btn fa fa-times fa-2x"
+                            data-tippy-content="Toggle X-ray mode" title="Toggle X-ray mode"></button>
                 </div>
 
                 <!-- Measurement tools -->
@@ -157,6 +165,12 @@ class Toolbar extends Controller {
             active: false // Start inactive like sample
         });
 
+        // Marquee Selection Tool
+        this.marqueeSelectionTool = new MarqueeSelectionTool(this, {
+            buttonElement: toolbarElement.querySelector(".xeokit-marquee"),
+            active: false
+        });
+
         // Hide Tool
         this.hideTool = new HideTool(this, {
             buttonElement: toolbarElement.querySelector(".xeokit-hide"),
@@ -168,6 +182,11 @@ class Toolbar extends Controller {
         showAllButton.addEventListener("click", (event) => {
             this._showAllObjects();
             event.preventDefault();
+        });
+
+        // X-Ray Tool (dropdown)
+        this.xrayTool = new XRayTool(this, {
+            buttonElement: toolbarElement.querySelector(".xeokit-xray")
         });
 
         // Note: Mutual exclusion will be set up after Level 4 tools are initialized
@@ -192,6 +211,7 @@ class Toolbar extends Controller {
         // Set up mutual exclusion for all interaction tools
         this._mutexActivation([
             this.selectionTool,
+            this.marqueeSelectionTool,
             this.hideTool,
             this.measureDistanceTool,
             this.measureAngleTool

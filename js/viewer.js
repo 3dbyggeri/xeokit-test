@@ -110,18 +110,58 @@ async function loadModel(src) {
             edges: true
         });
 
-        // Fit camera to the entire model
-        viewer.cameraFlight.flyTo({
-            aabb: viewer.scene.getAABB(),
-            duration: 0.5
-        });
+        // Reset object states
+        viewer.scene.setObjectsVisible(viewer.scene.objectIds, true);
+        viewer.scene.setObjectsXRayed(viewer.scene.xrayedObjectIds, false);
+        viewer.scene.setObjectsSelected(viewer.scene.selectedObjectIds, false);
 
-        viewer.scene.setObjectsVisible(true);
-        viewer.scene.setObjectsXRayed(false);
-        viewer.cameraFlight.flyTo(loadedModel);
+        // Auto fit view to the entire model - wait longer for model to be fully loaded
+        setTimeout(() => {
+            const scene = viewer.scene;
+            const aabb = scene.getAABB(scene.visibleObjectIds);
+            if (aabb && aabb.length === 6) {
+                viewer.cameraFlight.flyTo({
+                    aabb: aabb,
+                    duration: 1.0
+                });
+
+                // Set pivot point to center of model
+                const center = [
+                    (aabb[0] + aabb[3]) / 2,
+                    (aabb[1] + aabb[4]) / 2,
+                    (aabb[2] + aabb[5]) / 2
+                ];
+                viewer.cameraControl.pivotPos = center;
+
+                console.log("Auto view fit applied to loaded model", aabb);
+            } else {
+                console.log("No valid AABB found for auto view fit");
+            }
+        }, 500); // Longer delay to ensure model is fully loaded
 
         // Enable toolbar tools when model is loaded
         toolbar.onModelLoaded();
+
+        // Trigger manual fit action as backup
+        setTimeout(() => {
+            if (toolbar.fitAction && toolbar.fitAction.getEnabled()) {
+                toolbar.fitAction.fit();
+                console.log("Manual fit action triggered");
+            } else {
+                // Direct fallback approach
+                const scene = viewer.scene;
+                const aabb = scene.getAABB(scene.visibleObjectIds);
+                if (aabb && aabb.length === 6) {
+                    viewer.cameraFlight.flyTo({
+                        aabb: aabb,
+                        duration: 1.0
+                    });
+                    console.log("Direct view fit fallback triggered");
+                } else {
+                    console.log("Fit action not available and no valid AABB for fallback");
+                }
+            }
+        }, 800);
 
         if (currentModelName) {
             // Fetch properties and legend from backend using model name
