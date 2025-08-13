@@ -107,7 +107,16 @@
 
 /* Tooltip styles */
 [data-tippy-content] {
-    cursor: help;
+    cursor: inherit;
+}
+
+/* Tool mode cursors */
+canvas.selection-mode {
+    cursor: pointer !important;
+}
+
+canvas.hide-mode {
+    cursor: not-allowed !important;
 }
 
 /* Responsive adjustments */

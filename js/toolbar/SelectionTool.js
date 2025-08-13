@@ -27,16 +27,40 @@ class SelectionTool extends Controller {
         this.on("active", (active) => {
             if (active) {
                 this._buttonElement.classList.add("active");
-                this._activateSelectionMode();
+                this._onPick = this.viewer.cameraControl.on("picked", (pickResult) => {
+                    if (!pickResult.entity) {
+                        return;
+                    }
+                    const entity = pickResult.entity;
+                    const objectId = entity.id;
+                    const isSelected = entity.selected;
+
+                    // Toggle selection
+                    entity.selected = !isSelected;
+                    entity.highlighted = entity.selected;
+
+                    console.log(`SelectionTool: Object ${objectId} ${entity.selected ? 'selected' : 'deselected'}`);
+
+                    // Show metadata for selected object
+                    if (entity.selected) {
+                        this._showMetadataForObject(entity);
+                    } else {
+                        this._clearMetadata();
+                    }
+                });
             } else {
                 this._buttonElement.classList.remove("active");
-                this._deactivateSelectionMode();
+                if (this._onPick !== undefined) {
+                    this.viewer.cameraControl.off(this._onPick);
+                    this._onPick = undefined;
+                }
             }
         });
 
         this._buttonElement.addEventListener("click", (event) => {
             if (this.getEnabled()) {
-                this.setActive(!this.getActive());
+                const active = this.getActive();
+                this.setActive(!active);
             }
             event.preventDefault();
         });
@@ -46,71 +70,80 @@ class SelectionTool extends Controller {
     }
 
     /**
-     * Activate selection mode
+     * Reset selection tool - clear all selections
      */
-    _activateSelectionMode() {
-        const scene = this.viewer.scene;
-        const input = scene.input;
-
-        // Remove existing click handler if any
-        if (this._clickHandler) {
-            input.off("mouseclicked", this._clickHandler);
-        }
-
-        // Add new click handler for selection
-        this._clickHandler = (coords) => {
-            const hit = scene.pick({
-                canvasPos: coords
-            });
-
-            if (hit && hit.entity) {
-                const entity = hit.entity;
-                const isSelected = entity.selected;
-                
-                // Toggle selection
-                entity.selected = !isSelected;
-                
-                // Also highlight selected objects
-                entity.highlighted = entity.selected;
-                
-                console.log(`Object ${entity.id} ${entity.selected ? 'selected' : 'deselected'}`);
-                
-                // Fire selection event
-                this.fire("objectSelected", {
-                    entity: entity,
-                    selected: entity.selected
-                });
-            } else {
-                // Clear all selections when clicking empty space
-                this._clearAllSelections();
-            }
-        };
-
-        input.on("mouseclicked", this._clickHandler);
-        
-        // Change cursor to indicate selection mode
-        this.viewer.canvas.style.cursor = "crosshair";
-        
-        console.log("Selection mode activated");
+    reset() {
+        this._clearAllSelections();
     }
 
     /**
-     * Deactivate selection mode
+     * Show metadata for a selected object
      */
-    _deactivateSelectionMode() {
-        const scene = this.viewer.scene;
-        const input = scene.input;
-
-        // Remove click handler
-        if (this._clickHandler) {
-            input.off("mouseclicked", this._clickHandler);
-            this._clickHandler = null;
+    _showMetadataForObject(entity) {
+        // Access global variables from viewer.js
+        if (typeof window.modelProperties === 'undefined' || typeof window.modelLegend === 'undefined') {
+            console.log('Model properties or legend not available');
+            this._showBasicMetadata(entity);
+            return;
         }
 
-        // Restore default cursor
-        this.viewer.canvas.style.cursor = "default";
-        
-        console.log("Selection mode deactivated");
+        const metadataTable = document.querySelector('#metadataTable tbody');
+        metadataTable.innerHTML = '';
+
+        // Extract elementId from entity.id (e.g., Surface[105545] => 105545)
+        const match = entity.id.match(/\[(\d+)\]/);
+        const elementId = match ? match[1] : null;
+
+        if (elementId && window.modelProperties[elementId]) {
+            const props = window.modelProperties[elementId];
+            console.log('Showing metadata for selected object:', entity.id);
+
+            // Map property indices to names using legend
+            Object.entries(props).forEach(([key, value]) => {
+                let propName = key;
+                if (window.modelLegend[key] && window.modelLegend[key].Name) {
+                    propName = window.modelLegend[key].Name;
+                }
+                let displayValue;
+                if (value !== null && typeof value === 'object') {
+                    displayValue = JSON.stringify(value);
+                } else {
+                    displayValue = value;
+                }
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${propName}</td>
+                    <td>${displayValue}</td>
+                `;
+                metadataTable.appendChild(row);
+            });
+        } else {
+            this._showBasicMetadata(entity);
+        }
+    }
+
+    /**
+     * Show basic metadata when detailed properties aren't available
+     */
+    _showBasicMetadata(entity) {
+        const metadataTable = document.querySelector('#metadataTable tbody');
+        metadataTable.innerHTML = '';
+
+        const idRow = document.createElement('tr');
+        idRow.innerHTML = `
+            <td>ID</td>
+            <td>${entity.id}</td>
+        `;
+        metadataTable.appendChild(idRow);
+    }
+
+    /**
+     * Clear metadata display
+     */
+    _clearMetadata() {
+        const metadataTable = document.querySelector('#metadataTable tbody');
+        metadataTable.innerHTML = '';
+        console.log('Metadata cleared');
     }
 
     /**
@@ -119,14 +152,23 @@ class SelectionTool extends Controller {
     _clearAllSelections() {
         const scene = this.viewer.scene;
         const selectedObjectIds = scene.selectedObjectIds.slice(); // Copy array
-        
-        scene.setObjectsSelected(selectedObjectIds, false);
-        scene.setObjectsHighlighted(selectedObjectIds, false);
-        
-        console.log(`Cleared ${selectedObjectIds.length} selections`);
-        
+        const highlightedObjectIds = scene.highlightedObjectIds.slice(); // Copy array
+
+        if (selectedObjectIds.length > 0) {
+            scene.setObjectsSelected(selectedObjectIds, false);
+        }
+        if (highlightedObjectIds.length > 0) {
+            scene.setObjectsHighlighted(highlightedObjectIds, false);
+        }
+
+        console.log(`Cleared ${selectedObjectIds.length} selections and ${highlightedObjectIds.length} highlights`);
+
+        // Clear metadata when clearing selections
+        this._clearMetadata();
+
         this.fire("selectionsCleared", {
-            count: selectedObjectIds.length
+            selectedCount: selectedObjectIds.length,
+            highlightedCount: highlightedObjectIds.length
         });
     }
 

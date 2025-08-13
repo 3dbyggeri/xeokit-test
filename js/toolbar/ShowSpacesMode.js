@@ -84,9 +84,9 @@ class ShowSpacesMode extends Controller {
 
         // Look for objects with IFC space types
         const spaceTypes = [
-            "IfcSpace",
-            "IfcSpatialZone",
-            "IfcSpatialElement"
+            "Space",
+            "SpatialZone",
+            "SpatialElement"
         ];
 
         // Iterate through all objects and find spaces

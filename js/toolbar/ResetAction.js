@@ -44,15 +44,27 @@ class ResetAction extends Controller {
     reset() {
         const scene = this.viewer.scene;
         const camera = this.viewer.camera;
-        
+
         // Clear any selections and highlights
-        scene.setObjectsSelected(scene.selectedObjectIds, false);
-        scene.setObjectsHighlighted(scene.highlightedObjectIds, false);
-        
+        const selectedIds = scene.selectedObjectIds.slice();
+        const highlightedIds = scene.highlightedObjectIds.slice();
+
+        if (selectedIds.length > 0) {
+            scene.setObjectsSelected(selectedIds, false);
+        }
+        if (highlightedIds.length > 0) {
+            scene.setObjectsHighlighted(highlightedIds, false);
+        }
+
         // Show all objects
         scene.setObjectsVisible(scene.objectIds, true);
         scene.setObjectsXRayed(scene.xrayedObjectIds, false);
-        
+
+        // Deactivate interaction tools
+        if (this.parent && this.parent.deactivateInteractionTools) {
+            this.parent.deactivateInteractionTools();
+        }
+
         // Reset camera to fit all visible objects
         const aabb = scene.getAABB(scene.visibleObjectIds);
         if (aabb) {

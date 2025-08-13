@@ -139,7 +139,7 @@ class Toolbar extends Controller {
         // Selection Tool
         this.selectionTool = new SelectionTool(this, {
             buttonElement: toolbarElement.querySelector(".xeokit-select"),
-            active: false // Start inactive
+            active: false // Start inactive like sample
         });
 
         // Hide Tool
@@ -155,18 +155,11 @@ class Toolbar extends Controller {
             event.preventDefault();
         });
 
-        // Set up tool interactions - only one interaction tool active at a time
-        this.selectionTool.on("active", (active) => {
-            if (active && this.hideTool.getActive()) {
-                this.hideTool.setActive(false);
-            }
-        });
-
-        this.hideTool.on("active", (active) => {
-            if (active && this.selectionTool.getActive()) {
-                this.selectionTool.setActive(false);
-            }
-        });
+        // Set up mutual exclusion like the sample
+        this._mutexActivation([
+            this.selectionTool,
+            this.hideTool
+        ]);
     }
 
     /**
@@ -208,10 +201,42 @@ class Toolbar extends Controller {
     }
 
     /**
+     * Set up mutual exclusion between tools (from sample)
+     */
+    _mutexActivation(tools) {
+        for (let i = 0, len = tools.length; i < len; i++) {
+            const tool = tools[i];
+            if (!tool) {
+                continue;
+            }
+            tool.on("active", (active) => {
+                if (!active) {
+                    return;
+                }
+                for (let j = 0, lenj = tools.length; j < lenj; j++) {
+                    const tool2 = tools[j];
+                    if (!tool2 || tool2 === tool) {
+                        continue;
+                    }
+                    if (tool2.getActive()) {
+                        tool2.setActive(false);
+                    }
+                }
+            });
+        }
+    }
+
+    /**
      * Enable tools when model is loaded
      */
     onModelLoaded() {
         this._enableAllTools();
+
+        // Activate selection tool by default for better UX
+        if (this.selectionTool && !this.selectionTool.getActive()) {
+            this.selectionTool.setActive(true);
+            console.log("Selection tool activated by default on model load");
+        }
     }
 
     /**
@@ -236,6 +261,19 @@ class Toolbar extends Controller {
         }
 
         console.log("All objects shown");
+    }
+
+    /**
+     * Deactivate all interaction tools
+     */
+    deactivateInteractionTools() {
+        if (this.selectionTool) {
+            this.selectionTool.setActive(false);
+        }
+        if (this.hideTool) {
+            this.hideTool.setActive(false);
+        }
+        console.log("All interaction tools deactivated");
     }
 
     /**

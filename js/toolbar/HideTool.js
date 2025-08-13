@@ -28,89 +28,40 @@ class HideTool extends Controller {
         this.on("active", (active) => {
             if (active) {
                 this._buttonElement.classList.add("active");
-                this._activateHideMode();
+                this.viewer.cameraControl.doublePickFlyTo = false;
+                this._onPick = this.viewer.cameraControl.on("picked", (pickResult) => {
+                    if (!pickResult.entity) {
+                        return;
+                    }
+                    const entity = pickResult.entity;
+                    const objectId = entity.id;
+
+                    if (entity.visible) {
+                        entity.visible = false;
+                        this._hiddenObjectIds.add(objectId);
+                        console.log(`HideTool: Object ${objectId} hidden`);
+                    }
+                });
             } else {
                 this._buttonElement.classList.remove("active");
-                this._deactivateHideMode();
+                this.viewer.cameraControl.doublePickFlyTo = true;
+                if (this._onPick !== undefined) {
+                    this.viewer.cameraControl.off(this._onPick);
+                    this._onPick = undefined;
+                }
             }
         });
 
         this._buttonElement.addEventListener("click", (event) => {
             if (this.getEnabled()) {
-                this.setActive(!this.getActive());
+                const active = this.getActive();
+                this.setActive(!active);
             }
             event.preventDefault();
         });
 
         // Set initial state
         this.setActive(this._active);
-    }
-
-    /**
-     * Activate hide mode
-     */
-    _activateHideMode() {
-        const scene = this.viewer.scene;
-        const input = scene.input;
-
-        // Remove existing click handler if any
-        if (this._clickHandler) {
-            input.off("mouseclicked", this._clickHandler);
-        }
-
-        // Add new click handler for hiding
-        this._clickHandler = (coords) => {
-            const hit = scene.pick({
-                canvasPos: coords
-            });
-
-            if (hit && hit.entity) {
-                const entity = hit.entity;
-                const objectId = entity.id;
-                
-                if (entity.visible) {
-                    // Hide the object
-                    entity.visible = false;
-                    this._hiddenObjectIds.add(objectId);
-                    
-                    console.log(`Object ${objectId} hidden`);
-                    
-                    // Fire hide event
-                    this.fire("objectHidden", {
-                        entity: entity,
-                        objectId: objectId
-                    });
-                } else {
-                    console.log(`Object ${objectId} is already hidden`);
-                }
-            }
-        };
-
-        input.on("mouseclicked", this._clickHandler);
-        
-        // Change cursor to indicate hide mode
-        this.viewer.canvas.style.cursor = "none";
-        
-        console.log("Hide mode activated");
-    }
-
-    /**
-     * Deactivate hide mode
-     */
-    _deactivateHideMode() {
-        const scene = this.viewer.scene;
-        const input = scene.input;
-
-        // Remove click handler
-        if (this._clickHandler) {
-            input.off("mouseclicked", this._clickHandler);
-            this._clickHandler = null;
-        }
-
-        // Restore default cursor
-        this.viewer.canvas.style.cursor = "default";
-        
-        console.log("Hide mode deactivated");
     }
 
     /**

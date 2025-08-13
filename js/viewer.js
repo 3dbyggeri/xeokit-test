@@ -23,6 +23,10 @@ let loadedModel = null;
 let modelProperties = null;
 let modelLegend = null;
 
+// Make properties available globally for toolbar tools
+window.modelProperties = null;
+window.modelLegend = null;
+
 // Track last selected and highlighted entity IDs
 let lastSelectedId = null;
 let lastHighlightedId = null;
@@ -126,22 +130,33 @@ async function loadModel(src) {
                 const propData = await propRes.json();
                 modelProperties = propData.properties;
                 modelLegend = propData.legend;
+
+                // Update global references for toolbar tools
+                window.modelProperties = modelProperties;
+                window.modelLegend = modelLegend;
+
                 console.log('Loaded properties for model:', currentModelName);
             } else {
                 console.warn('Failed to load properties for model:', currentModelName);
                 modelProperties = null;
                 modelLegend = null;
+                window.modelProperties = null;
+                window.modelLegend = null;
             }
         } else {
             console.warn('Could not extract model name from URL');
             modelProperties = null;
             modelLegend = null;
+            window.modelProperties = null;
+            window.modelLegend = null;
         }
 
     } catch (error) {
         console.error('Error loading model:', error);
         modelProperties = null;
         modelLegend = null;
+        window.modelProperties = null;
+        window.modelLegend = null;
         // Disable toolbar on error
         toolbar.onModelUnloaded();
     }
@@ -171,8 +186,11 @@ document.addEventListener('DOMContentLoaded', () => {
 // This will be the default behavior when no toolbar tools are active
 function handleDefaultClick(coords) {
     // Only handle clicks if no toolbar interaction tools are active
-    if (toolbar.selectionTool.getActive() || toolbar.hideTool.getActive()) {
-        return; // Let toolbar tools handle the click
+    if (toolbar.selectionTool && toolbar.selectionTool.getActive()) {
+        return; // Let selection tool handle the click
+    }
+    if (toolbar.hideTool && toolbar.hideTool.getActive()) {
+        return; // Let hide tool handle the click
     }
 
     const hit = viewer.scene.pick({
@@ -182,32 +200,18 @@ function handleDefaultClick(coords) {
     const metadataTable = document.querySelector('#metadataTable tbody');
     metadataTable.innerHTML = '';
 
-    // Deselect and unhighlight previous
-    if (lastSelectedId) {
-        viewer.scene.setObjectsSelected([lastSelectedId], false);
-    }
-    if (lastHighlightedId) {
-        viewer.scene.setObjectsHighlighted({ [lastHighlightedId]: false });
-    }
-    lastSelectedId = null;
-    lastHighlightedId = null;
-
+    // In default mode, we only show metadata - NO selection/highlighting
     if (hit && modelProperties && modelLegend) {
         const entity = hit.entity;
-        // Set new selection and highlight
-        viewer.scene.setObjectsSelected([entity.id], true);
-        viewer.scene.setObjectsHighlighted({ [entity.id]: true });
-        lastSelectedId = entity.id;
-        lastHighlightedId = entity.id;
-        console.log('Highlighting and selecting entity:', entity.id);
+        console.log('Showing metadata for entity:', entity.id);
+
         // Extract elementId from entity.id (e.g., Surface[105545] => 105545)
         const match = entity.id.match(/\[(\d+)\]/);
         const elementId = match ? match[1] : null;
         if (elementId && modelProperties[elementId]) {
             const props = modelProperties[elementId];
-            // Log selection
-            console.log('Entity selected:', entity.id);
-            console.log('Properties:', props);
+            console.log('Properties found for entity:', entity.id);
+
             // Map property indices to names using legend
             Object.entries(props).forEach(([key, value]) => {
                 let propName = key;
@@ -237,14 +241,9 @@ function handleDefaultClick(coords) {
             metadataTable.appendChild(idRow);
         }
     } else if (hit) {
-        // Set new selection and highlight even if no properties loaded
-        const entity = hit.entity;
-        viewer.scene.setObjectsSelected([entity.id], true);
-        viewer.scene.setObjectsHighlighted({ [entity.id]: true });
-        lastSelectedId = entity.id;
-        lastHighlightedId = entity.id;
-        console.log('Highlighting and selecting entity:', entity.id);
         // Show entity ID if no properties loaded
+        const entity = hit.entity;
+        console.log('Showing basic info for entity:', entity.id);
         const idRow = document.createElement('tr');
         idRow.innerHTML = `
             <td>ID</td>
@@ -252,21 +251,65 @@ function handleDefaultClick(coords) {
         `;
         metadataTable.appendChild(idRow);
     } else {
-        // Clear highlighting and selection when clicking empty space
-        if (lastSelectedId) {
-            viewer.scene.setObjectsSelected([lastSelectedId], false);
-        }
-        if (lastHighlightedId) {
-            viewer.scene.setObjectsHighlighted({ [lastHighlightedId]: false });
-        }
-        lastSelectedId = null;
-        lastHighlightedId = null;
-        console.log('Highlights and selection cleared');
+        console.log('Clicked empty space - metadata cleared');
     }
 }
 
-// Set up the default click handler
-viewer.scene.input.on("mouseclicked", handleDefaultClick);
+// Set up default metadata display when no tools are active
+viewer.cameraControl.on("picked", (pickResult) => {
+    // Only show metadata if no interaction tools are active
+    if (toolbar.selectionTool && toolbar.selectionTool.getActive()) {
+        return; // Let selection tool handle it
+    }
+    if (toolbar.hideTool && toolbar.hideTool.getActive()) {
+        return; // Let hide tool handle it
+    }
+
+    // Show metadata for picked object
+    if (pickResult && pickResult.entity) {
+        const entity = pickResult.entity;
+        console.log('Showing metadata for entity:', entity.id);
+
+        const metadataTable = document.querySelector('#metadataTable tbody');
+        metadataTable.innerHTML = '';
+
+        // Extract elementId from entity.id (e.g., Surface[105545] => 105545)
+        const match = entity.id.match(/\[(\d+)\]/);
+        const elementId = match ? match[1] : null;
+
+        if (elementId && window.modelProperties && window.modelProperties[elementId]) {
+            const props = window.modelProperties[elementId];
+
+            // Map property indices to names using legend
+            Object.entries(props).forEach(([key, value]) => {
+                let propName = key;
+                if (window.modelLegend && window.modelLegend[key] && window.modelLegend[key].Name) {
+                    propName = window.modelLegend[key].Name;
+                }
+                let displayValue;
+                if (value !== null && typeof value === 'object') {
+                    displayValue = JSON.stringify(value);
+                } else {
+                    displayValue = value;
+                }
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${propName}</td>
+                    <td>${displayValue}</td>
+                `;
+                metadataTable.appendChild(row);
+            });
+        } else {
+            // Show entity ID if no properties found
+            const idRow = document.createElement('tr');
+            idRow.innerHTML = `
+                <td>ID</td>
+                <td>${entity.id}</td>
+            `;
+            metadataTable.appendChild(idRow);
+        }
+    }
+});
 
 // Add keyboard shortcuts
 document.addEventListener('keydown', (event) => {
@@ -309,12 +352,7 @@ document.addEventListener('keydown', (event) => {
             break;
         case 'escape':
             // Deactivate all interaction tools
-            if (toolbar.selectionTool) {
-                toolbar.selectionTool.setActive(false);
-            }
-            if (toolbar.hideTool) {
-                toolbar.hideTool.setActive(false);
-            }
+            toolbar.deactivateInteractionTools();
             break;
     }
 });
