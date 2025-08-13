@@ -7,6 +7,8 @@ import { FirstPersonMode } from "./FirstPersonMode.js";
 import { ShowSpacesMode } from "./ShowSpacesMode.js";
 import { SelectionTool } from "./SelectionTool.js";
 import { HideTool } from "./HideTool.js";
+import { MeasureDistanceTool } from "./MeasureDistanceTool.js";
+import { MeasureAngleTool } from "./MeasureAngleTool.js";
 
 /**
  * Toolbar Manager - Coordinates all toolbar tools
@@ -34,6 +36,9 @@ class Toolbar extends Controller {
 
         // Initialize Level 3 tools (More Complex)
         this._initializeLevel3Tools(toolbarElement);
+
+        // Initialize Level 4 tools (Advanced)
+        this._initializeLevel4Tools(toolbarElement);
 
         // Enable all tools initially
         this._enableAllTools();
@@ -81,6 +86,16 @@ class Toolbar extends Controller {
                     <!-- Show all button -->
                     <button type="button" class="xeokit-showAll xeokit-btn fa fa-eye fa-2x"
                             data-tippy-content="Show all objects" title="Show all objects"></button>
+                </div>
+
+                <!-- Measurement tools -->
+                <div class="xeokit-btn-group" role="group">
+                    <!-- Distance measurement tool -->
+                    <button type="button" class="xeokit-measure-distance xeokit-btn fa fa-ruler fa-2x"
+                            data-tippy-content="Measure distance" title="Measure distance"></button>
+                    <!-- Angle measurement tool -->
+                    <button type="button" class="xeokit-measure-angle xeokit-btn fa fa-angle-left fa-2x"
+                            data-tippy-content="Measure angle" title="Measure angle"></button>
                 </div>
             </div>
         `;
@@ -155,11 +170,34 @@ class Toolbar extends Controller {
             event.preventDefault();
         });
 
-        // Set up mutual exclusion like the sample
+        // Note: Mutual exclusion will be set up after Level 4 tools are initialized
+    }
+
+    /**
+     * Initialize Level 4 tools (Advanced measurement tools)
+     */
+    _initializeLevel4Tools(toolbarElement) {
+        // Distance Measurement Tool
+        this.measureDistanceTool = new MeasureDistanceTool(this, {
+            buttonElement: toolbarElement.querySelector(".xeokit-measure-distance"),
+            active: false
+        });
+
+        // Angle Measurement Tool
+        this.measureAngleTool = new MeasureAngleTool(this, {
+            buttonElement: toolbarElement.querySelector(".xeokit-measure-angle"),
+            active: false
+        });
+
+        // Set up mutual exclusion for all interaction tools
         this._mutexActivation([
             this.selectionTool,
-            this.hideTool
+            this.hideTool,
+            this.measureDistanceTool,
+            this.measureAngleTool
         ]);
+
+        console.log("Level 4 tools (Advanced) initialized");
     }
 
     /**
@@ -179,6 +217,10 @@ class Toolbar extends Controller {
         // Level 3 tools
         this.selectionTool.setEnabled(true);
         this.hideTool.setEnabled(true);
+
+        // Level 4 tools
+        this.measureDistanceTool.setEnabled(true);
+        this.measureAngleTool.setEnabled(true);
     }
 
     /**
@@ -198,6 +240,10 @@ class Toolbar extends Controller {
         // Level 3 tools
         this.selectionTool.setEnabled(false);
         this.hideTool.setEnabled(false);
+
+        // Level 4 tools
+        this.measureDistanceTool.setEnabled(false);
+        this.measureAngleTool.setEnabled(false);
     }
 
     /**
@@ -273,6 +319,12 @@ class Toolbar extends Controller {
         if (this.hideTool) {
             this.hideTool.setActive(false);
         }
+        if (this.measureDistanceTool) {
+            this.measureDistanceTool.setActive(false);
+        }
+        if (this.measureAngleTool) {
+            this.measureAngleTool.setActive(false);
+        }
         console.log("All interaction tools deactivated");
     }
 
@@ -308,6 +360,14 @@ class Toolbar extends Controller {
         }
         if (this.hideTool) {
             this.hideTool.destroy();
+        }
+
+        // Level 4 tools
+        if (this.measureDistanceTool) {
+            this.measureDistanceTool.destroy();
+        }
+        if (this.measureAngleTool) {
+            this.measureAngleTool.destroy();
         }
 
         super.destroy();

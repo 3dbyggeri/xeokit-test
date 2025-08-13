@@ -65,6 +65,14 @@ class ResetAction extends Controller {
             this.parent.deactivateInteractionTools();
         }
 
+        // Clear measurements
+        if (this.parent && this.parent.measureDistanceTool) {
+            this.parent.measureDistanceTool.clearMeasurements();
+        }
+        if (this.parent && this.parent.measureAngleTool) {
+            this.parent.measureAngleTool.clearMeasurements();
+        }
+
         // Reset camera to fit all visible objects
         const aabb = scene.getAABB(scene.visibleObjectIds);
         if (aabb) {

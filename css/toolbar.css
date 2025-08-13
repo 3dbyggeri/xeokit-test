@@ -119,6 +119,10 @@ canvas.hide-mode {
     cursor: not-allowed !important;
 }
 
+canvas.measure-mode {
+    cursor: crosshair !important;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .xeokit-toolbar {
