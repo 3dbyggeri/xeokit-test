@@ -1,5 +1,5 @@
 // Basic XKT Viewer
-import { Viewer, XKTLoaderPlugin } from "https://unpkg.com/@xeokit/xeokit-sdk@2.6.75/dist/xeokit-sdk.es.js";
+import { Viewer, XKTLoaderPlugin, NavCubePlugin } from "https://unpkg.com/@xeokit/xeokit-sdk@2.6.75/dist/xeokit-sdk.es.js";
 import { Toolbar } from "./toolbar/Toolbar.js";
 
 // Initialize viewer
@@ -10,6 +10,13 @@ const viewer = new Viewer({
 
 // Add XKT loader
 const xktLoader = new XKTLoaderPlugin(viewer);
+
+// Initialize Navigation Cube
+const navCube = new NavCubePlugin(viewer, {
+    canvasElement: document.getElementById("myNavCubeCanvas"),
+    fitVisible: true,
+    color: "#CFCFCF"
+});
 
 // Get DOM elements
 const projectSelect = document.getElementById('projectSelect');
@@ -120,9 +127,27 @@ async function loadModel(src) {
             const scene = viewer.scene;
             const aabb = scene.getAABB(scene.visibleObjectIds);
             if (aabb && aabb.length === 6) {
+                // Add padding to the bounding box to avoid too tight fit
+                const padding = 0.3; // 30% padding
+                const width = aabb[3] - aabb[0];
+                const height = aabb[4] - aabb[1];
+                const depth = aabb[5] - aabb[2];
+                const maxDim = Math.max(width, height, depth);
+                const paddingAmount = maxDim * padding;
+
+                const paddedAABB = [
+                    aabb[0] - paddingAmount,
+                    aabb[1] - paddingAmount,
+                    aabb[2] - paddingAmount,
+                    aabb[3] + paddingAmount,
+                    aabb[4] + paddingAmount,
+                    aabb[5] + paddingAmount
+                ];
+
                 viewer.cameraFlight.flyTo({
-                    aabb: aabb,
-                    duration: 1.0
+                    aabb: paddedAABB,
+                    duration: 1.0,
+                    fitFOV: 45 // Wider field of view for less tight fit
                 });
 
                 // Set pivot point to center of model
@@ -133,7 +158,7 @@ async function loadModel(src) {
                 ];
                 viewer.cameraControl.pivotPos = center;
 
-                console.log("Auto view fit applied to loaded model", aabb);
+                console.log("Auto view fit applied to loaded model with padding", paddedAABB);
             } else {
                 console.log("No valid AABB found for auto view fit");
             }
@@ -148,15 +173,33 @@ async function loadModel(src) {
                 toolbar.fitAction.fit();
                 console.log("Manual fit action triggered");
             } else {
-                // Direct fallback approach
+                // Direct fallback approach with padding
                 const scene = viewer.scene;
                 const aabb = scene.getAABB(scene.visibleObjectIds);
                 if (aabb && aabb.length === 6) {
+                    // Add padding to avoid too tight fit
+                    const padding = 0.3;
+                    const width = aabb[3] - aabb[0];
+                    const height = aabb[4] - aabb[1];
+                    const depth = aabb[5] - aabb[2];
+                    const maxDim = Math.max(width, height, depth);
+                    const paddingAmount = maxDim * padding;
+
+                    const paddedAABB = [
+                        aabb[0] - paddingAmount,
+                        aabb[1] - paddingAmount,
+                        aabb[2] - paddingAmount,
+                        aabb[3] + paddingAmount,
+                        aabb[4] + paddingAmount,
+                        aabb[5] + paddingAmount
+                    ];
+
                     viewer.cameraFlight.flyTo({
-                        aabb: aabb,
-                        duration: 1.0
+                        aabb: paddedAABB,
+                        duration: 1.0,
+                        fitFOV: 45
                     });
-                    console.log("Direct view fit fallback triggered");
+                    console.log("Direct view fit fallback triggered with padding");
                 } else {
                     console.log("Fit action not available and no valid AABB for fallback");
                 }
