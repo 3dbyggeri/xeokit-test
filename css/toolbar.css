@@ -1,0 +1,126 @@
+/* Toolbar Styles - Based on xeokit-bim-viewer */
+
+.xeokit-toolbar {
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    background: transparent;
+    pointer-events: none;
+    padding: 10px;
+    z-index: 1000;
+}
+
+.xeokit-btn-group {
+    position: relative;
+    display: inline-flex;
+    vertical-align: middle;
+    margin-bottom: 3px;
+    margin-right: 1.2rem !important;
+    pointer-events: none;
+}
+
+.xeokit-btn {
+    position: relative;
+    flex: 1 1 auto;
+    color: #03103F;
+    background-color: white;
+    text-align: center;
+    vertical-align: middle;
+    border: 2px solid #1d2453;
+    padding: .375rem .75rem;
+    border-radius: .25rem;
+    transition: color .15s ease-in-out, background-color .15s ease-in-out, border-color .15s ease-in-out, box-shadow .15s ease-in-out;
+    -webkit-appearance: button;
+    overflow: visible;
+    margin: 0 2px 0 0;
+    box-sizing: border-box;
+    align-items: flex-start;
+    pointer-events: all;
+    cursor: pointer;
+}
+
+.xeokit-btn.disabled {
+    opacity: .55;
+    color: #99A4AD;
+    border-color: #6c757d !important;
+    pointer-events: none;
+    cursor: not-allowed;
+}
+
+.xeokit-btn.active {
+    color: #fff;
+    background-color: #03103F;
+    border-color: #03103F !important;
+}
+
+.xeokit-btn:hover:not(.disabled) {
+    color: #477dca;
+    border-color: #477dca !important;
+}
+
+.xeokit-btn:focus {
+    outline: none;
+    box-shadow: 0 0 0 0.2rem rgba(71, 125, 202, 0.25);
+}
+
+/* Icon sizing */
+.xeokit-btn .fa-2x {
+    font-size: 1.5em;
+}
+
+/* Specific button styles */
+.xeokit-reset {
+    min-width: 50px;
+}
+
+.xeokit-fit {
+    min-width: 50px;
+}
+
+.xeokit-threeD {
+    min-width: 50px;
+}
+
+.xeokit-ortho {
+    min-width: 50px;
+}
+
+.xeokit-firstPerson {
+    min-width: 50px;
+}
+
+.xeokit-showSpaces {
+    min-width: 50px;
+}
+
+.xeokit-select {
+    min-width: 50px;
+}
+
+.xeokit-hide {
+    min-width: 50px;
+}
+
+/* Tooltip styles */
+[data-tippy-content] {
+    cursor: help;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .xeokit-toolbar {
+        left: 10px;
+        transform: none;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .xeokit-btn-group {
+        margin-right: 0.5rem !important;
+        margin-bottom: 0.5rem;
+    }
+}

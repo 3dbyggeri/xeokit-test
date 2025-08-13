@@ -1,5 +1,6 @@
 // Basic XKT Viewer
 import { Viewer, XKTLoaderPlugin } from "https://unpkg.com/@xeokit/xeokit-sdk@2.6.75/dist/xeokit-sdk.es.js";
+import { Toolbar } from "./toolbar/Toolbar.js";
 
 // Initialize viewer
 const viewer = new Viewer({
@@ -13,6 +14,7 @@ const xktLoader = new XKTLoaderPlugin(viewer);
 // Get DOM elements
 const projectSelect = document.getElementById('projectSelect');
 const modelSelect = document.getElementById('modelSelect');
+const toolbarElement = document.getElementById('myToolbar');
 
 // Create state for storing loaded model
 let loadedModel = null;
@@ -27,6 +29,11 @@ let lastHighlightedId = null;
 
 // Store current model name
 let currentModelName = null;
+
+// Initialize toolbar
+const toolbar = new Toolbar(viewer, {
+    toolbarElement: toolbarElement
+});
 
 // Initialize projects
 function initializeProjects() {
@@ -68,6 +75,9 @@ async function loadModelsForProject() {
         // Load first model if available
         if (models.length > 0) {
             loadModel(models[0].url);
+        } else {
+            // Disable toolbar when no models available
+            toolbar.onModelUnloaded();
         }
 
     } catch (error) {
@@ -106,6 +116,9 @@ async function loadModel(src) {
         viewer.scene.setObjectsXRayed(false);
         viewer.cameraFlight.flyTo(loadedModel);
 
+        // Enable toolbar tools when model is loaded
+        toolbar.onModelLoaded();
+
         if (currentModelName) {
             // Fetch properties and legend from backend using model name
             const propRes = await fetch(`/api/modeldata/properties/${encodeURIComponent(currentModelName)}`);
@@ -129,6 +142,8 @@ async function loadModel(src) {
         console.error('Error loading model:', error);
         modelProperties = null;
         modelLegend = null;
+        // Disable toolbar on error
+        toolbar.onModelUnloaded();
     }
 }
 
@@ -152,12 +167,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Initialize object click handling
-viewer.scene.input.on("mouseclicked", (coords) => {
+// Initialize object click handling for metadata display
+// This will be the default behavior when no toolbar tools are active
+function handleDefaultClick(coords) {
+    // Only handle clicks if no toolbar interaction tools are active
+    if (toolbar.selectionTool.getActive() || toolbar.hideTool.getActive()) {
+        return; // Let toolbar tools handle the click
+    }
+
     const hit = viewer.scene.pick({
         canvasPos: coords
     });
-    
+
     const metadataTable = document.querySelector('#metadataTable tbody');
     metadataTable.innerHTML = '';
 
@@ -241,6 +262,60 @@ viewer.scene.input.on("mouseclicked", (coords) => {
         lastSelectedId = null;
         lastHighlightedId = null;
         console.log('Highlights and selection cleared');
+    }
+}
+
+// Set up the default click handler
+viewer.scene.input.on("mouseclicked", handleDefaultClick);
+
+// Add keyboard shortcuts
+document.addEventListener('keydown', (event) => {
+    // Only handle shortcuts when not typing in input fields
+    if (event.target.tagName === 'INPUT' || event.target.tagName === 'SELECT') {
+        return;
+    }
+
+    switch(event.key.toLowerCase()) {
+        case 'r':
+            // Reset view
+            if (toolbar.resetAction) {
+                toolbar.resetAction.reset();
+            }
+            break;
+        case 'f':
+            // Fit view
+            if (toolbar.fitAction) {
+                toolbar.fitAction.fit();
+            }
+            break;
+        case 's':
+            // Toggle selection tool
+            if (toolbar.selectionTool) {
+                toolbar.selectionTool.setActive(!toolbar.selectionTool.getActive());
+            }
+            break;
+        case 'h':
+            // Toggle hide tool
+            if (toolbar.hideTool) {
+                toolbar.hideTool.setActive(!toolbar.hideTool.getActive());
+            }
+            break;
+        case 'a':
+            // Show all objects
+            if (event.ctrlKey || event.metaKey) {
+                event.preventDefault();
+                toolbar._showAllObjects();
+            }
+            break;
+        case 'escape':
+            // Deactivate all interaction tools
+            if (toolbar.selectionTool) {
+                toolbar.selectionTool.setActive(false);
+            }
+            if (toolbar.hideTool) {
+                toolbar.hideTool.setActive(false);
+            }
+            break;
     }
 });
 
