@@ -12,6 +12,7 @@
     <link rel="stylesheet" href="/css/metadata.css">
     <link rel="stylesheet" href="/css/main.css">
     <link rel="stylesheet" href="/css/toolbar.css">
+    <link rel="stylesheet" href="/css/treeview.css">
     <!-- FontAwesome for icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -55,6 +56,39 @@
     <!-- Navigation Cube Canvas -->
     <canvas id="myNavCubeCanvas"></canvas>
     
+    <!-- Tree View Panel -->
+    <div id="treeViewPanel">
+        <div class="xeokit-tabs">
+            <div class="xeokit-tab xeokit-objectsTab active">
+                <div class="xeokit-tab-content">
+                    <div class="xeokit-btn-group">
+                        <button type="button" class="xeokit-showAllObjects xeokit-btn">Show all</button>
+                        <button type="button" class="xeokit-hideAllObjects xeokit-btn">Hide all</button>
+                    </div>
+                    <div class="xeokit-objects xeokit-tree-panel"></div>
+                </div>
+            </div>
+            <div class="xeokit-tab xeokit-classesTab">
+                <div class="xeokit-tab-content">
+                    <div class="xeokit-btn-group">
+                        <button type="button" class="xeokit-showAllClasses xeokit-btn">Show all</button>
+                        <button type="button" class="xeokit-hideAllClasses xeokit-btn">Hide all</button>
+                    </div>
+                    <div class="xeokit-classes xeokit-tree-panel"></div>
+                </div>
+            </div>
+            <div class="xeokit-tab xeokit-storeysTab">
+                <div class="xeokit-tab-content">
+                    <div class="xeokit-btn-group">
+                        <button type="button" class="xeokit-showAllStoreys xeokit-btn">Show all</button>
+                        <button type="button" class="xeokit-hideAllStoreys xeokit-btn">Hide all</button>
+                    </div>
+                    <div class="xeokit-storeys xeokit-tree-panel"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Metadata Panel -->
     <div id="metadataBox">
         <div id="metadataHeader">Metadata</div>
