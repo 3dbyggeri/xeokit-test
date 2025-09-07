@@ -52,6 +52,12 @@ class Toolbar extends Controller {
     _createToolbarHTML(toolbarElement) {
         const toolbarTemplate = `
             <div class="xeokit-toolbar">
+                <!-- Toggle Explorer button -->
+                <div class="xeokit-btn-group">
+                    <button type="button" class="xeokit-toggle-explorer xeokit-btn fa fa-sitemap fa-2x"
+                            data-tippy-content="Toggle Explorer" title="Toggle Explorer"></button>
+                </div>
+
                 <!-- Reset button -->
                 <div class="xeokit-btn-group">
                     <button type="button" class="xeokit-reset xeokit-btn fa fa-home fa-2x"
@@ -115,6 +121,15 @@ class Toolbar extends Controller {
      * Initialize Level 1 tools (Reset and Fit)
      */
     _initializeLevel1Tools(toolbarElement) {
+        // Toggle Explorer button
+        const toggleExplorerButton = toolbarElement.querySelector(".xeokit-toggle-explorer");
+        if (toggleExplorerButton) {
+            toggleExplorerButton.addEventListener("click", (event) => {
+                this._toggleExplorer();
+                event.preventDefault();
+            });
+        }
+
         // Reset Action
         this.resetAction = new ResetAction(this, {
             buttonElement: toolbarElement.querySelector(".xeokit-reset")
@@ -327,6 +342,31 @@ class Toolbar extends Controller {
         }
 
         console.log("All objects shown");
+    }
+
+    /**
+     * Toggle the Explorer panel visibility
+     */
+    _toggleExplorer() {
+        const explorerPanel = document.getElementById('treeViewPanel');
+        if (explorerPanel) {
+            const isVisible = explorerPanel.style.display !== 'none' && explorerPanel.style.display !== '';
+            explorerPanel.style.display = isVisible ? 'none' : 'block';
+
+            // Update button state
+            const toggleButton = document.querySelector('.xeokit-toggle-explorer');
+            if (toggleButton) {
+                if (isVisible) {
+                    toggleButton.classList.remove('active');
+                } else {
+                    toggleButton.classList.add('active');
+                }
+            }
+
+            console.log(`Explorer panel ${isVisible ? 'hidden' : 'shown'}`);
+        } else {
+            console.warn('TreeView panel not found');
+        }
     }
 
     /**

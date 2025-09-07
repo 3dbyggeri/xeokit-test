@@ -1,6 +1,8 @@
 // Basic XKT Viewer
 import { Viewer, XKTLoaderPlugin, NavCubePlugin } from "https://unpkg.com/@xeokit/xeokit-sdk@2.6.75/dist/xeokit-sdk.es.js";
 import { Toolbar } from "./toolbar/Toolbar.js";
+import { TreeView } from "./treeview/TreeView.js";
+import { ObjectContextMenu, CanvasContextMenu } from "./contextmenu/ContextMenu.js";
 
 // Initialize viewer
 const viewer = new Viewer({
@@ -41,10 +43,209 @@ let lastHighlightedId = null;
 // Store current model name
 let currentModelName = null;
 
+// Store tree view and context menus for global access
+let treeView = null;
+let objectContextMenu = null;
+let canvasContextMenu = null;
+
 // Initialize toolbar
 const toolbar = new Toolbar(viewer, {
     toolbarElement: toolbarElement
 });
+
+// Initialize tree view after DOM is ready
+document.addEventListener('DOMContentLoaded', () => {
+    treeView = new TreeView(viewer, {
+        containerElement: document.getElementById('treeViewPanel'),
+        onNodeClick: (node, event) => {
+            // Only handle checkbox toggling - no metadata display
+            console.log('Tree node clicked:', node);
+        },
+        onNodeContextMenu: (node, event) => {
+            console.log('Tree node context menu:', node);
+            // Handle tree node context menu
+        }
+    });
+});
+
+// Initialize context menus
+objectContextMenu = new ObjectContextMenu(viewer, {
+    hideOnAction: true,
+    parentNode: document.body
+});
+
+canvasContextMenu = new CanvasContextMenu(viewer, {
+    hideOnAction: true,
+    parentNode: document.body
+});
+
+// Add context menu event handlers
+viewer.scene.canvas.canvas.addEventListener('contextmenu', (event) => {
+    event.preventDefault();
+
+    const hit = viewer.scene.pick({
+        canvasPos: [event.offsetX, event.offsetY]
+    });
+
+    if (hit && hit.entity.isObject) {
+        // Show object context menu
+        objectContextMenu.setContext({
+            viewer: viewer,
+            entity: hit.entity,
+            showProperties: (objectId) => {
+                showObjectMetadata(objectId);
+            },
+            showInExplorer: (objectId) => {
+                showInTreeView(objectId);
+            }
+        });
+        objectContextMenu.show(event.pageX, event.pageY);
+    } else {
+        // Show canvas context menu
+        canvasContextMenu.setContext({
+            viewer: viewer
+        });
+        canvasContextMenu.show(event.pageX, event.pageY);
+    }
+});
+
+// Function to create sample tree data for testing
+function createSampleTreeData() {
+    return {
+        "[Main] testserverProject2.rvt": {
+            "Levels": {
+                "Level 0": {
+                    "Doors": {
+                        "319024": {
+                            "Family and Type": "Doors_ExtDbl_Flush: 1810x2110mm"
+                        },
+                        "319084": {
+                            "Family and Type": "Doors_ExtDbl_Flush: 1810x2110mm"
+                        }
+                    },
+                    "Walls": {
+                        "318889": {
+                            "Family and Type": "Basic Wall: Wall-Ext_102Bwk-75Ins-100LBlk-12P"
+                        },
+                        "318890": {
+                            "Family and Type": "Basic Wall: Wall-Int_100LBlk-12P"
+                        }
+                    },
+                    "Windows": {
+                        "319100": {
+                            "Family and Type": "Windows_Sgl_Plain: 600x1200mm"
+                        },
+                        "319101": {
+                            "Family and Type": "Windows_Sgl_Plain: 800x1200mm"
+                        }
+                    }
+                },
+                "Level 1": {
+                    "Doors": {
+                        "320024": {
+                            "Family and Type": "Doors_Sgl_Flush: 810x2110mm"
+                        }
+                    },
+                    "Walls": {
+                        "320889": {
+                            "Family and Type": "Basic Wall: Wall-Int_100LBlk-12P"
+                        }
+                    }
+                },
+                "zeroLevel": {
+                    "Levels": {
+                        "311": {
+                            "Family and Type": "Level: Circle Head - Project Datum"
+                        },
+                        "694": {
+                            "Family and Type": "Level: Circle Head - Project Datum"
+                        }
+                    }
+                }
+            }
+        }
+    };
+}
+
+// Function to show object metadata
+function showObjectMetadata(objectId) {
+    // Expand metadata window if collapsed
+    const metadataBox = document.getElementById('metadataBox');
+    if (metadataBox && metadataBox.classList.contains('collapsed')) {
+        metadataBox.classList.remove('collapsed');
+    }
+
+    const metadataTable = document.querySelector('#metadataTable tbody');
+    metadataTable.innerHTML = '';
+
+    // Extract elementId from objectId (e.g., Surface[105545] => 105545)
+    const match = objectId.match(/\[(\d+)\]/);
+    const elementId = match ? match[1] : null;
+
+    if (elementId && window.modelProperties && window.modelProperties[elementId]) {
+        const props = window.modelProperties[elementId];
+
+        // Map property indices to names using legend
+        Object.entries(props).forEach(([key, value]) => {
+            let propName = key;
+            if (window.modelLegend && window.modelLegend[key] && window.modelLegend[key].Name) {
+                propName = window.modelLegend[key].Name;
+            }
+            let displayValue;
+            if (value !== null && typeof value === 'object') {
+                displayValue = JSON.stringify(value);
+            } else {
+                displayValue = value;
+            }
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${propName}</td>
+                <td>${displayValue}</td>
+            `;
+            metadataTable.appendChild(row);
+        });
+    } else {
+        // Show object ID if no properties found
+        const idRow = document.createElement('tr');
+        idRow.innerHTML = `
+            <td>ID</td>
+            <td>${objectId}</td>
+        `;
+        metadataTable.appendChild(idRow);
+    }
+}
+
+// Function to show object in tree view
+function showInTreeView(objectId) {
+    if (!treeView) {
+        console.warn('TreeView not available');
+        return;
+    }
+
+    // Make sure explorer panel is visible
+    const explorerPanel = document.getElementById('treeViewPanel');
+    if (explorerPanel && explorerPanel.style.display === 'none') {
+        explorerPanel.style.display = 'block';
+
+        // Update toggle button state
+        const toggleButton = document.querySelector('.xeokit-toggle-explorer');
+        if (toggleButton) {
+            toggleButton.classList.add('active');
+        }
+    }
+
+    // Extract elementId from objectId (e.g., Surface[105545] => 105545)
+    const match = objectId.match(/\[(\d+)\]/);
+    const elementId = match ? match[1] : null;
+
+    if (elementId) {
+        // Try to find and select the node in tree view
+        treeView.selectNodeById(elementId);
+        console.log('Showing object in tree view:', elementId);
+    } else {
+        console.warn('Could not extract element ID from object ID:', objectId);
+    }
+}
 
 // Initialize projects
 function initializeProjects() {
@@ -217,6 +418,22 @@ async function loadModel(src) {
                 // Update global references for toolbar tools
                 window.modelProperties = modelProperties;
                 window.modelLegend = modelLegend;
+
+                // Load tree view data if available
+                if (propData.treeView && treeView) {
+                    console.log('Setting tree data:', propData.treeView);
+                    treeView.setTreeData(propData.treeView);
+
+                    // Force rebuild after a short delay
+                    setTimeout(() => {
+                        console.log('Force rebuilding tree...');
+                        treeView.buildTree();
+                    }, 1000);
+                } else if (treeView) {
+                    // Create sample tree data for testing
+                    const sampleTreeData = createSampleTreeData();
+                    treeView.setTreeData(sampleTreeData);
+                }
 
                 console.log('Loaded properties for model:', currentModelName);
             } else {
@@ -439,6 +656,71 @@ document.addEventListener('keydown', (event) => {
             break;
     }
 });
+
+// Global test function for debugging
+window.testTreeView = function() {
+    if (treeView) {
+        console.log('TreeView instance:', treeView);
+        console.log('TreeView data:', treeView.treeData);
+        console.log('Current tab:', treeView.currentTab);
+        treeView.buildTree();
+    } else {
+        console.log('TreeView not initialized');
+    }
+};
+
+// Global ID conversion utilities
+window.idUtils = {
+    // Convert from numeric ID to scene object ID format (e.g., "319024" -> "Wall-Ext_102-wk-/Sims-100LBlk-12P[319024]")
+    numericToSceneId: function(numericId) {
+        const sceneObjects = viewer.scene.objects;
+        for (const sceneId in sceneObjects) {
+            if (sceneId.includes(`[${numericId}]`)) {
+                return sceneId;
+            }
+        }
+        return null;
+    },
+
+    // Convert from scene object ID to numeric ID (e.g., "Wall-Ext_102-wk-/Sims-100LBlk-12P[319024]" -> "319024")
+    sceneToNumericId: function(sceneId) {
+        const match = sceneId.match(/\[(\d+)\]$/);
+        return match ? match[1] : null;
+    },
+
+    // Get scene object by numeric ID
+    getObjectByNumericId: function(numericId) {
+        const sceneId = this.numericToSceneId(numericId);
+        return sceneId ? viewer.scene.objects[sceneId] : null;
+    }
+};
+
+// Global test function for checking objects
+window.testObjects = function() {
+    console.log('Available scene objects:', Object.keys(viewer.scene.objects));
+    console.log('First 10 objects:', Object.keys(viewer.scene.objects).slice(0, 10));
+
+    // Test ID conversion
+    const firstObjectId = Object.keys(viewer.scene.objects)[0];
+    const numericId = window.idUtils.sceneToNumericId(firstObjectId);
+    const backToSceneId = window.idUtils.numericToSceneId(numericId);
+    console.log('ID conversion test:', firstObjectId, '->', numericId, '->', backToSceneId);
+};
+
+// Global test function for tree view selection
+window.testTreeSelection = function(numericId) {
+    if (!numericId) {
+        // Use first available object
+        const firstObjectId = Object.keys(viewer.scene.objects)[0];
+        numericId = window.idUtils.sceneToNumericId(firstObjectId);
+    }
+    console.log('Testing tree selection for numeric ID:', numericId);
+    if (treeView) {
+        treeView.selectNodeById(numericId);
+    } else {
+        console.log('TreeView not available');
+    }
+};
 
 // Initialize
 initializeProjects();
