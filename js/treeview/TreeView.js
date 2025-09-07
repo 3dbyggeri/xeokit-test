@@ -46,16 +46,22 @@ export class TreeView {
         // Button event handlers
         document.addEventListener('click', (e) => {
             if (e.target.classList.contains('xeokit-showAllObjects')) {
+                e.preventDefault();
                 this.showAllObjects();
             } else if (e.target.classList.contains('xeokit-hideAllObjects')) {
+                e.preventDefault();
                 this.hideAllObjects();
             } else if (e.target.classList.contains('xeokit-showAllClasses')) {
+                e.preventDefault();
                 this.showAllClasses();
             } else if (e.target.classList.contains('xeokit-hideAllClasses')) {
+                e.preventDefault();
                 this.hideAllClasses();
             } else if (e.target.classList.contains('xeokit-showAllStoreys')) {
+                e.preventDefault();
                 this.showAllStoreys();
             } else if (e.target.classList.contains('xeokit-hideAllStoreys')) {
+                e.preventDefault();
                 this.hideAllStoreys();
             }
         });
@@ -80,7 +86,19 @@ export class TreeView {
     setTreeData(treeData) {
         console.log('TreeView: Setting tree data:', treeData);
         this.treeData = treeData;
+        this.clearLoadingStates();
         this.buildTree();
+    }
+
+    clearLoadingStates() {
+        // Clear any loading indicators or animations
+        const allPanels = document.querySelectorAll('.xeokit-tree-panel');
+        allPanels.forEach(panel => {
+            panel.classList.remove('loading');
+            // Remove any spinning elements
+            const spinners = panel.querySelectorAll('.fa-spin, .spinner, .loading-dots');
+            spinners.forEach(spinner => spinner.remove());
+        });
     }
 
     buildTree() {
@@ -102,6 +120,8 @@ export class TreeView {
 
         console.log('TreeView: Found tree panel:', treePanel);
 
+        // Clear any loading states
+        treePanel.classList.remove('loading');
         treePanel.innerHTML = '';
 
         try {
@@ -290,6 +310,8 @@ export class TreeView {
             checkbox.addEventListener('change', (e) => {
                 e.stopPropagation();
                 this.toggleVisibility(node, checkbox.checked);
+                // Sync children checkboxes when parent is toggled
+                this._syncChildrenCheckboxes(node, checkbox.checked);
             });
             
             // Node label
@@ -510,14 +532,38 @@ export class TreeView {
         });
     }
 
+    _syncChildrenCheckboxes(node, checked) {
+        if (!node.children || node.children.length === 0) {
+            return;
+        }
+
+        // Update all child checkboxes in the DOM
+        const updateCheckboxes = (children) => {
+            children.forEach(child => {
+                const checkbox = document.querySelector(`[data-node-id="${child.id}"] .tree-visibility-checkbox`);
+                if (checkbox) {
+                    checkbox.checked = checked;
+                }
+                if (child.children) {
+                    updateCheckboxes(child.children);
+                }
+            });
+        };
+
+        updateCheckboxes(node.children);
+    }
+
     // Button action handlers
     showAllObjects() {
+        console.log('TreeView: Show all objects');
         this.viewer.scene.setObjectsVisible(this.viewer.scene.objectIds, true);
+        this.viewer.scene.setObjectsXRayed(this.viewer.scene.xrayedObjectIds, false);
         this._updateAllCheckboxes(true);
     }
 
     hideAllObjects() {
-        this.viewer.scene.setObjectsVisible(this.viewer.scene.objectIds, false);
+        console.log('TreeView: Hide all objects');
+        this.viewer.scene.setObjectsVisible(this.viewer.scene.visibleObjectIds, false);
         this._updateAllCheckboxes(false);
     }
 
@@ -538,6 +584,7 @@ export class TreeView {
     }
 
     _updateAllCheckboxes(checked) {
+        console.log('TreeView: Updating all checkboxes to', checked);
         document.querySelectorAll('.tree-visibility-checkbox').forEach(checkbox => {
             checkbox.checked = checked;
         });

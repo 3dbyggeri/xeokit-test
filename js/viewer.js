@@ -722,6 +722,144 @@ window.testTreeSelection = function(numericId) {
     }
 };
 
+// Global test function for section tool
+window.testSectionTool = function() {
+    if (toolbar && toolbar.sectionTool) {
+        const sectionTool = toolbar.sectionTool;
+        console.log('Section Tool status:');
+        console.log('- Enabled:', sectionTool.getEnabled());
+        console.log('- Active:', sectionTool.getActive());
+        console.log('- Number of sections:', sectionTool.getNumSections());
+        console.log('- Has active sections:', sectionTool.hasActiveSections());
+        console.log('- Active section count:', sectionTool.getActiveSectionCount());
+
+        if (!sectionTool.getActive()) {
+            console.log('To test: Click the section tool button (cut icon) to activate, then click on objects to create section planes');
+        }
+    } else {
+        console.log('Section Tool not available');
+    }
+};
+
+// Global function to clear any persistent loading states
+window.clearLoadingStates = function() {
+    if (treeView) {
+        treeView.clearLoadingStates();
+        console.log('Cleared loading states from tree view');
+    }
+
+    // Clear all possible loading indicators
+    const loadingSelectors = [
+        '.loading', '.fa-spin', '.spinner', '.loading-dots',
+        '[class*="loading"]', '[class*="spinner"]', '[class*="spin"]',
+        '.xeokit-busy-modal', '.busy-modal'
+    ];
+
+    loadingSelectors.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(el => {
+            console.log('Found loading element:', el, 'with classes:', el.className);
+            el.style.display = 'none';
+            el.style.visibility = 'hidden';
+            el.classList.remove('loading', 'fa-spin', 'spinner', 'spinning');
+            if (el.classList.contains('loading-dots') || el.classList.contains('spinner')) {
+                el.remove();
+            }
+        });
+    });
+
+    // Also check for any CSS animations and stop them
+    const allElements = document.querySelectorAll('*');
+    allElements.forEach(el => {
+        const computedStyle = window.getComputedStyle(el);
+        if (computedStyle.animationName !== 'none' && computedStyle.animationName !== '') {
+            console.log('Stopping animation on element:', el, 'animation:', computedStyle.animationName);
+            el.style.animation = 'none';
+            el.style.webkitAnimation = 'none';
+        }
+    });
+
+    // Specifically look for any xeokit loading indicators
+    const xeokitElements = document.querySelectorAll('[class*="xeokit"]');
+    xeokitElements.forEach(el => {
+        if (el.style.animation || el.style.webkitAnimation) {
+            console.log('Clearing xeokit animation on:', el);
+            el.style.animation = 'none';
+            el.style.webkitAnimation = 'none';
+        }
+    });
+
+    console.log('Cleared all loading indicators and animations');
+};
+
+// Global function to test section tool dropdown
+window.testSectionDropdown = function() {
+    if (toolbar && toolbar.sectionTool) {
+        const sectionTool = toolbar.sectionTool;
+        console.log('Section Tool Dropdown Test:');
+        console.log('- Number of sections:', sectionTool.getNumSections());
+        console.log('- Section planes:', Object.keys(sectionTool._sectionPlanesPlugin.sectionPlanes));
+        console.log('- Context menu:', sectionTool._contextMenu);
+        console.log('- Menu button element:', sectionTool._menuButtonElement);
+
+        if (sectionTool.getNumSections() === 0) {
+            console.log('To test dropdown: First create some section planes by:');
+            console.log('1. Click the section tool (cut icon) to activate');
+            console.log('2. Click on 3D objects to create section planes');
+            console.log('3. Then click the dropdown arrow to see individual slice options');
+        } else {
+            console.log('Section planes exist! Click the dropdown arrow next to the section tool to see the menu');
+        }
+    } else {
+        console.log('Section Tool not available');
+    }
+};
+
+// Global function to manually trigger section dropdown
+window.showSectionDropdown = function() {
+    if (toolbar && toolbar.sectionTool && toolbar.sectionTool._menuButtonElement) {
+        const button = toolbar.sectionTool._menuButtonElement;
+        const rect = button.getBoundingClientRect();
+        console.log('Manually triggering section dropdown at:', rect.left, rect.bottom + 5);
+
+        // Trigger the context menu manually
+        toolbar.sectionTool._contextMenu.setContext({
+            viewer: viewer,
+            sectionPlanesPlugin: toolbar.sectionTool._sectionPlanesPlugin
+        });
+        toolbar.sectionTool._contextMenu.show(rect.left, rect.bottom + 5);
+    } else {
+        console.log('Section tool or menu button not available');
+    }
+};
+
+// Global function to debug context menu visibility
+window.debugContextMenu = function() {
+    if (toolbar && toolbar.sectionTool && toolbar.sectionTool._contextMenu) {
+        const menu = toolbar.sectionTool._contextMenu;
+        console.log('Context Menu Debug:');
+        console.log('- Menu element:', menu.menuElement);
+        console.log('- Menu visible:', menu.visible);
+        console.log('- Menu display:', menu.menuElement ? menu.menuElement.style.display : 'N/A');
+        console.log('- Menu position:', menu.menuElement ? {
+            left: menu.menuElement.style.left,
+            top: menu.menuElement.style.top,
+            zIndex: menu.menuElement.style.zIndex
+        } : 'N/A');
+        console.log('- Menu parent:', menu.menuElement ? menu.menuElement.parentNode : 'N/A');
+        console.log('- Menu items:', menu.items ? menu.items.length : 'N/A');
+
+        // Check if menu element exists in DOM
+        if (menu.menuElement) {
+            const rect = menu.menuElement.getBoundingClientRect();
+            console.log('- Menu rect:', rect);
+            console.log('- Menu computed style:', window.getComputedStyle(menu.menuElement));
+        }
+    } else {
+        console.log('Context menu not available');
+    }
+};
+
 // Initialize
 initializeProjects();
 
