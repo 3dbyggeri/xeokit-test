@@ -43,6 +43,9 @@ export class TreeView {
     }
 
     _initEventHandlers() {
+        // Ensure tree view buttons are always enabled
+        this._ensureButtonsEnabled();
+        
         // Button event handlers
         document.addEventListener('click', (e) => {
             if (e.target.classList.contains('xeokit-showAllObjects')) {
@@ -67,6 +70,27 @@ export class TreeView {
         });
     }
 
+    _ensureButtonsEnabled() {
+        // Remove disabled attribute and class from all tree view buttons
+        const buttonSelectors = [
+            '.xeokit-showAllObjects',
+            '.xeokit-hideAllObjects', 
+            '.xeokit-showAllClasses',
+            '.xeokit-hideAllClasses',
+            '.xeokit-showAllStoreys',
+            '.xeokit-hideAllStoreys'
+        ];
+
+        buttonSelectors.forEach(selector => {
+            const buttons = document.querySelectorAll(selector);
+            buttons.forEach(button => {
+                button.disabled = false;
+                button.removeAttribute('disabled');
+                button.classList.remove('disabled');
+            });
+        });
+    }
+
     switchTab(tabId) {
         console.log('TreeView: Switching to tab:', tabId);
         this.currentTab = tabId;
@@ -81,6 +105,9 @@ export class TreeView {
 
         // Rebuild tree for current tab
         this.buildTree();
+        
+        // Ensure buttons are enabled after tab switch
+        this._ensureButtonsEnabled();
     }
 
     setTreeData(treeData) {

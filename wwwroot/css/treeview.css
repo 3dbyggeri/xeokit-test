@@ -96,6 +96,21 @@
     cursor: not-allowed;
 }
 
+/* Override toolbar disabled styles for tree view buttons */
+#treeViewPanel .xeokit-btn {
+    opacity: 1 !important;
+    color: #ccc !important;
+    border-color: #666 !important;
+    pointer-events: all !important;
+    cursor: pointer !important;
+    text-transform: none !important; /* Remove uppercase transformation */
+}
+
+#treeViewPanel .xeokit-btn:hover {
+    background-color: #666 !important;
+    color: #fff !important;
+}
+
 /* Tree Panel */
 .xeokit-tree-panel {
     flex: 1;
