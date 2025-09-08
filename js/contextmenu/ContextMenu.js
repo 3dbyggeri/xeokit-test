@@ -19,6 +19,8 @@ export class ContextMenu {
         this.menuElement = document.createElement('div');
         this.menuElement.className = 'xeokit-context-menu';
         this.menuElement.style.display = 'none';
+        this.menuElement.style.position = 'fixed';
+        this.menuElement.style.zIndex = '10000';
         this.parentNode.appendChild(this.menuElement);
     }
 
@@ -39,14 +41,23 @@ export class ContextMenu {
     }
 
     show(x, y) {
-        if (!this.context) return;
+        if (!this.context) {
+            console.warn('ContextMenu: No context set, cannot show menu');
+            return;
+        }
 
+        console.log('ContextMenu: Building menu...');
         this._buildMenu();
 
         // First position to get dimensions
         this.menuElement.style.left = x + 'px';
         this.menuElement.style.top = y + 'px';
         this.menuElement.style.display = 'block';
+        this.menuElement.style.visibility = 'visible';
+
+        console.log('ContextMenu: Menu positioned at', x, y);
+        console.log('ContextMenu: Menu element:', this.menuElement);
+        console.log('ContextMenu: Menu items count:', this.items.length);
 
         // Get menu dimensions
         const rect = this.menuElement.getBoundingClientRect();
@@ -99,17 +110,100 @@ export class ContextMenu {
 
             itemGroup.forEach(item => {
                 const li = document.createElement('li');
-                
+
                 // Check if item should be shown
                 if (item.getShown && !item.getShown(this.context)) {
                     return;
                 }
 
                 // Get title
-                const title = typeof item.getTitle === 'function' 
-                    ? item.getTitle(this.context) 
+                const title = typeof item.getTitle === 'function'
+                    ? item.getTitle(this.context)
                     : item.title || 'Menu Item';
-                
+
+                li.textContent = title;
+
+                // Check if item has submenu
+                if (item.items && Array.isArray(item.items)) {
+                    // This is a submenu item
+                    li.classList.add('has-submenu');
+                    li.innerHTML = title + ' <span class="submenu-arrow">▶</span>';
+
+                    // Create submenu
+                    const submenu = this._createSubmenu(item.items);
+                    li.appendChild(submenu);
+
+                    // Handle hover events for submenu
+                    li.addEventListener('mouseenter', (e) => {
+                        if (item.doHoverEnter) {
+                            item.doHoverEnter(this.context);
+                        }
+                        submenu.style.display = 'block';
+                    });
+
+                    li.addEventListener('mouseleave', (e) => {
+                        if (item.doHoverLeave) {
+                            item.doHoverLeave(this.context);
+                        }
+                        submenu.style.display = 'none';
+                    });
+                } else {
+                    // Regular menu item
+                    // Check if item is enabled
+                    const enabled = item.getEnabled ? item.getEnabled(this.context) : true;
+                    if (!enabled) {
+                        li.classList.add('disabled');
+                    } else {
+                        li.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (item.doAction) {
+                                item.doAction(this.context);
+                            }
+                            if (this.hideOnAction) {
+                                this.hide();
+                            }
+                        });
+                    }
+                }
+
+                ul.appendChild(li);
+            });
+        });
+
+        this.menuElement.appendChild(ul);
+    }
+
+    _createSubmenu(submenuItems) {
+        const submenu = document.createElement('div');
+        submenu.className = 'xeokit-context-submenu';
+        submenu.style.display = 'none';
+
+        const ul = document.createElement('ul');
+
+        submenuItems.forEach((itemGroup, groupIndex) => {
+            if (groupIndex > 0) {
+                // Add separator between groups
+                const separator = document.createElement('li');
+                separator.className = 'separator';
+                separator.style.borderTop = '1px solid #555';
+                separator.style.margin = '4px 0';
+                separator.style.height = '1px';
+                ul.appendChild(separator);
+            }
+
+            itemGroup.forEach(item => {
+                const li = document.createElement('li');
+
+                // Check if item should be shown
+                if (item.getShown && !item.getShown(this.context)) {
+                    return;
+                }
+
+                // Get title
+                const title = typeof item.getTitle === 'function'
+                    ? item.getTitle(this.context)
+                    : item.title || 'Menu Item';
+
                 li.textContent = title;
 
                 // Check if item is enabled
@@ -132,7 +226,8 @@ export class ContextMenu {
             });
         });
 
-        this.menuElement.appendChild(ul);
+        submenu.appendChild(ul);
+        return submenu;
     }
 
     setContext(context) {
