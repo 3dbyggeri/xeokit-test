@@ -20,6 +20,9 @@ const navCube = new NavCubePlugin(viewer, {
     color: "#CFCFCF"
 });
 
+// Configure camera control: disable right-click pan, enable middle-click pan
+viewer.cameraControl.panRightClick = false;
+
 // Get DOM elements
 const projectSelect = document.getElementById('projectSelect');
 const modelSelect = document.getElementById('modelSelect');
@@ -323,6 +326,14 @@ async function loadModel(src) {
         viewer.scene.setObjectsXRayed(viewer.scene.xrayedObjectIds, false);
         viewer.scene.setObjectsSelected(viewer.scene.selectedObjectIds, false);
 
+        // Reset and rebuild tree view for the newly loaded model
+        if (treeView) {
+            treeView.setTreeData(null);
+            // Clear panel DOM
+            const panels = document.querySelectorAll('.xeokit-tree-panel');
+            panels.forEach(p => p.innerHTML = "");
+        }
+
         // Auto fit view to the entire model - wait longer for model to be fully loaded
         setTimeout(() => {
             const scene = viewer.scene;
@@ -430,9 +441,8 @@ async function loadModel(src) {
                         treeView.buildTree();
                     }, 1000);
                 } else if (treeView) {
-                    // Create sample tree data for testing
-                    const sampleTreeData = createSampleTreeData();
-                    treeView.setTreeData(sampleTreeData);
+                    // No tree data for this model – clear any previous tree
+                    treeView.setTreeData({});
                 }
 
                 console.log('Loaded properties for model:', currentModelName);
