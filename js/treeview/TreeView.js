@@ -114,7 +114,13 @@ export class TreeView {
         console.log('TreeView: Setting tree data:', treeData);
         this.treeData = treeData;
         this.clearLoadingStates();
-        this.buildTree();
+        
+        // Ensure DOM is ready before building tree
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', () => this.buildTree());
+        } else {
+            this.buildTree();
+        }
     }
 
     clearLoadingStates() {
@@ -156,7 +162,10 @@ export class TreeView {
             
             // Extract data based on current tab
             const projectData = Object.values(this.treeData)[0]; // Get first project
-            if (!projectData || !projectData.Levels) return;
+            if (!projectData || !projectData.Levels) {
+                console.log('TreeView: No project data or Levels found');
+                return;
+            }
 
             switch (this.currentTab) {
                 case 'objects':
@@ -170,7 +179,7 @@ export class TreeView {
                     break;
             }
 
-            if (hierarchyData) {
+            if (hierarchyData && hierarchyData.length > 0) {
                 const ul = this._createTreeElement(hierarchyData);
                 treePanel.appendChild(ul);
             }

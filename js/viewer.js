@@ -434,12 +434,7 @@ async function loadModel(src) {
                 if (propData.treeView && treeView) {
                     console.log('Setting tree data:', propData.treeView);
                     treeView.setTreeData(propData.treeView);
-
-                    // Force rebuild after a short delay
-                    setTimeout(() => {
-                        console.log('Force rebuilding tree...');
-                        treeView.buildTree();
-                    }, 1000);
+                    // buildTree is called automatically by setTreeData
                 } else if (treeView) {
                     // No tree data for this model – clear any previous tree
                     treeView.setTreeData({});
