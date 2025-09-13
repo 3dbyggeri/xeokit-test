@@ -11,6 +11,7 @@ import { MarqueeSelectionTool } from "./MarqueeSelectionTool.js";
 import { XRayTool } from "./XRayTool.js";
 import { MeasureDistanceTool } from "./MeasureDistanceTool.js";
 import { MeasureAngleTool } from "./MeasureAngleTool.js";
+import { SectionTool } from "./SectionTool.js";
 
 /**
  * Toolbar Manager - Coordinates all toolbar tools
@@ -42,6 +43,9 @@ class Toolbar extends Controller {
         // Initialize Level 4 tools (Advanced)
         this._initializeLevel4Tools(toolbarElement);
 
+        // Initialize Level 5 tools (Most Complex)
+        this._initializeLevel5Tools(toolbarElement);
+
         // Enable all tools initially
         this._enableAllTools();
     }
@@ -52,6 +56,12 @@ class Toolbar extends Controller {
     _createToolbarHTML(toolbarElement) {
         const toolbarTemplate = `
             <div class="xeokit-toolbar">
+                <!-- Toggle Explorer button -->
+                <div class="xeokit-btn-group">
+                    <button type="button" class="xeokit-toggle-explorer xeokit-btn fa fa-sitemap fa-2x"
+                            data-tippy-content="Toggle Explorer" title="Toggle Explorer"></button>
+                </div>
+
                 <!-- Reset button -->
                 <div class="xeokit-btn-group">
                     <button type="button" class="xeokit-reset xeokit-btn fa fa-home fa-2x"
@@ -105,6 +115,18 @@ class Toolbar extends Controller {
                     <button type="button" class="xeokit-measure-angle xeokit-btn fa fa-angle-left fa-2x"
                             data-tippy-content="Measure angle" title="Measure angle"></button>
                 </div>
+
+                <!-- Section tools -->
+                <div class="xeokit-btn-group" role="group">
+                    <!-- Section tool -->
+                    <button type="button" class="xeokit-section xeokit-btn fa fa-cut fa-2x"
+                            data-tippy-content="Section Tool - Click objects to create cross-sections" title="Section Tool">
+                        <span class="xeokit-section-counter">0</span>
+                    </button>
+                    <!-- Section menu button -->
+                    <button type="button" class="xeokit-section-menu xeokit-btn fa fa-caret-down fa-2x"
+                            data-tippy-content="Section options" title="Section options"></button>
+                </div>
             </div>
         `;
 
@@ -115,6 +137,15 @@ class Toolbar extends Controller {
      * Initialize Level 1 tools (Reset and Fit)
      */
     _initializeLevel1Tools(toolbarElement) {
+        // Toggle Explorer button
+        const toggleExplorerButton = toolbarElement.querySelector(".xeokit-toggle-explorer");
+        if (toggleExplorerButton) {
+            toggleExplorerButton.addEventListener("click", (event) => {
+                this._toggleExplorer();
+                event.preventDefault();
+            });
+        }
+
         // Reset Action
         this.resetAction = new ResetAction(this, {
             buttonElement: toolbarElement.querySelector(".xeokit-reset")
@@ -208,16 +239,32 @@ class Toolbar extends Controller {
             active: false
         });
 
-        // Set up mutual exclusion for all interaction tools
+        console.log("Level 4 tools (Advanced) initialized");
+    }
+
+    /**
+     * Initialize Level 5 tools (Most Complex - Section Tool)
+     */
+    _initializeLevel5Tools(toolbarElement) {
+        // Section Tool
+        this.sectionTool = new SectionTool(this, {
+            buttonElement: toolbarElement.querySelector(".xeokit-section"),
+            menuButtonElement: toolbarElement.querySelector(".xeokit-section-menu"),
+            counterElement: toolbarElement.querySelector(".xeokit-section-counter"),
+            active: false
+        });
+
+        // Set up mutual exclusion for all interaction tools (including section tool)
         this._mutexActivation([
             this.selectionTool,
             this.marqueeSelectionTool,
             this.hideTool,
             this.measureDistanceTool,
-            this.measureAngleTool
+            this.measureAngleTool,
+            this.sectionTool
         ]);
 
-        console.log("Level 4 tools (Advanced) initialized");
+        console.log("Level 5 tools (Most Complex) initialized");
     }
 
     /**
@@ -241,6 +288,9 @@ class Toolbar extends Controller {
         // Level 4 tools
         this.measureDistanceTool.setEnabled(true);
         this.measureAngleTool.setEnabled(true);
+
+        // Level 5 tools
+        this.sectionTool.setEnabled(true);
     }
 
     /**
@@ -264,6 +314,9 @@ class Toolbar extends Controller {
         // Level 4 tools
         this.measureDistanceTool.setEnabled(false);
         this.measureAngleTool.setEnabled(false);
+
+        // Level 5 tools
+        this.sectionTool.setEnabled(false);
     }
 
     /**
@@ -327,6 +380,31 @@ class Toolbar extends Controller {
         }
 
         console.log("All objects shown");
+    }
+
+    /**
+     * Toggle the Explorer panel visibility
+     */
+    _toggleExplorer() {
+        const explorerPanel = document.getElementById('treeViewPanel');
+        if (explorerPanel) {
+            const isVisible = explorerPanel.style.display !== 'none' && explorerPanel.style.display !== '';
+            explorerPanel.style.display = isVisible ? 'none' : 'block';
+
+            // Update button state
+            const toggleButton = document.querySelector('.xeokit-toggle-explorer');
+            if (toggleButton) {
+                if (isVisible) {
+                    toggleButton.classList.remove('active');
+                } else {
+                    toggleButton.classList.add('active');
+                }
+            }
+
+            console.log(`Explorer panel ${isVisible ? 'hidden' : 'shown'}`);
+        } else {
+            console.warn('TreeView panel not found');
+        }
     }
 
     /**

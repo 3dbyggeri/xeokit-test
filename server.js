@@ -398,6 +398,7 @@ app.get('/api/modeldata/properties/:modelName', async (req, res) => {
         res.json({ 
             properties: doc.Properties, 
             legend: doc.Legend,
+            treeView: doc.TreeView,
             modelId: doc._id // Include the model ID in response for reference
         });
     } catch (err) {

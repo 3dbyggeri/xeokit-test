@@ -1,0 +1,361 @@
+/* Tree View Panel Styles */
+#treeViewPanel {
+    position: fixed;
+    left: 10px;
+    top: 120px;
+    width: 350px;
+    height: calc(100vh - 140px); /* Extend to cover whole page vertically */
+    background-color: rgba(30, 30, 30, 0.95);
+    border: 1px solid #555;
+    border-radius: 5px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+    z-index: 1000;
+    font-family: Arial, sans-serif;
+    font-size: 12px;
+    color: #ffffff;
+    overflow: hidden;
+}
+
+/* Tab Navigation */
+.xeokit-tabs {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.xeokit-tab {
+    display: none;
+    flex-direction: column;
+    height: 100%;
+}
+
+.xeokit-tab.active {
+    display: flex;
+}
+
+.xeokit-tab-btn {
+    display: inline-block;
+    padding: 8px 12px;
+    background-color: #444;
+    color: #ccc;
+    text-decoration: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.xeokit-tab-btn:hover {
+    background-color: #555;
+    color: #fff;
+}
+
+.xeokit-tab.active .xeokit-tab-btn {
+    background-color: #2a5aa0;
+    color: #fff;
+    border-bottom-color: #4a7bc8;
+}
+
+/* Tab Content */
+.xeokit-tab-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+/* Button Group */
+.xeokit-btn-group {
+    padding: 8px;
+    border-bottom: 1px solid #555;
+    display: flex;
+    gap: 5px;
+}
+
+.xeokit-btn {
+    padding: 4px 8px;
+    background-color: #555;
+    color: #ccc;
+    border: 1px solid #666;
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 10px;
+    text-transform: uppercase;
+}
+
+.xeokit-btn:hover {
+    background-color: #666;
+    color: #fff;
+}
+
+.xeokit-btn:disabled {
+    background-color: #333;
+    color: #666;
+    cursor: not-allowed;
+}
+
+/* Override toolbar disabled styles for tree view buttons */
+#treeViewPanel .xeokit-btn {
+    opacity: 1 !important;
+    color: #ccc !important;
+    border-color: #666 !important;
+    pointer-events: all !important;
+    cursor: pointer !important;
+    text-transform: none !important; /* Remove uppercase transformation */
+}
+
+#treeViewPanel .xeokit-btn:hover {
+    background-color: #666 !important;
+    color: #fff !important;
+}
+
+/* Tree Panel */
+.xeokit-tree-panel {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+    padding: 8px;
+    min-width: 0; /* Allow shrinking below content width */
+}
+
+/* Tree Structure */
+.xeokit-tree-panel ul {
+    list-style: none;
+    padding-left: 0;
+    margin: 0;
+}
+
+.xeokit-tree-panel ul ul {
+    padding-left: 20px;
+}
+
+.xeokit-tree-panel li {
+    margin: 2px 0;
+    position: relative;
+    line-height: 20px;
+}
+
+.xeokit-tree-panel li .tree-node {
+    display: flex;
+    align-items: center;
+    padding: 2px 4px;
+    border-radius: 3px;
+    cursor: pointer;
+    user-select: none;
+}
+
+.xeokit-tree-panel li .tree-node:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.xeokit-tree-panel li .tree-node.selected {
+    background-color: rgba(74, 123, 200, 0.3);
+}
+
+/* Expand/Collapse Icons */
+.tree-expand-icon {
+    width: 12px;
+    height: 12px;
+    margin-right: 4px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: #ccc;
+}
+
+.tree-expand-icon:before {
+    content: "▶";
+}
+
+.tree-expand-icon.expanded:before {
+    content: "▼";
+}
+
+.tree-expand-icon.leaf {
+    visibility: hidden;
+}
+
+/* Visibility Checkbox */
+.tree-visibility-checkbox {
+    width: 12px;
+    height: 12px;
+    margin-right: 6px;
+    cursor: pointer;
+    accent-color: #4a7bc8;
+}
+
+/* Node Label */
+.tree-node-label {
+    flex: 1;
+    font-size: 11px;
+    color: #ddd;
+    overflow: visible; /* Allow text to overflow to show horizontal scrollbar */
+    text-overflow: clip; /* Remove ellipsis */
+    white-space: nowrap;
+    min-width: max-content; /* Ensure full text width is available */
+}
+
+/* Node Count */
+.tree-node-count {
+    font-size: 9px;
+    color: #999;
+    margin-left: 4px;
+}
+
+/* Scrollbar Styling */
+.xeokit-tree-panel::-webkit-scrollbar {
+    width: 8px;
+}
+
+.xeokit-tree-panel::-webkit-scrollbar-track {
+    background: #333;
+}
+
+.xeokit-tree-panel::-webkit-scrollbar-thumb {
+    background: #666;
+    border-radius: 4px;
+}
+
+.xeokit-tree-panel::-webkit-scrollbar-thumb:hover {
+    background: #777;
+}
+
+/* Highlighted Node */
+.tree-node.highlighted {
+    background-color: rgba(255, 255, 0, 0.3);
+    border: 1px solid #ffff00;
+}
+
+/* Context Menu Styles */
+.xeokit-context-menu {
+    position: fixed !important;
+    background-color: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    z-index: 99999 !important;
+    min-width: 150px;
+    font-size: 11px;
+    color: #ddd;
+    pointer-events: auto !important;
+}
+
+.xeokit-context-menu ul {
+    list-style: none;
+    margin: 0;
+    padding: 2px 0; /* Reduced from 4px to 2px */
+}
+
+.xeokit-context-menu li {
+    padding: 4px 12px; /* Reduced from 6px to 4px */
+    cursor: pointer;
+    /* Removed border-bottom to eliminate separators */
+}
+
+.xeokit-context-menu li:hover {
+    background-color: #4a7bc8;
+    color: #fff;
+}
+
+.xeokit-context-menu li.disabled {
+    color: #666;
+    cursor: not-allowed;
+}
+
+.xeokit-context-menu li.disabled:hover {
+    background-color: transparent;
+    color: #666;
+}
+
+/* Submenu styling */
+.xeokit-context-menu li.has-submenu {
+    position: relative;
+}
+
+.xeokit-context-submenu {
+    position: absolute;
+    left: 100%;
+    top: 0;
+    background-color: #2a2a2a;
+    border: 1px solid #555;
+    border-radius: 4px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+    z-index: 10001;
+    min-width: 120px;
+    font-size: 11px;
+    color: #ddd;
+}
+
+.xeokit-context-submenu ul {
+    list-style: none;
+    margin: 0;
+    padding: 2px 0;
+}
+
+.xeokit-context-submenu li {
+    padding: 4px 12px;
+    cursor: pointer;
+}
+
+.xeokit-context-submenu li:hover {
+    background-color: #4a7bc8;
+    color: #fff;
+}
+
+.xeokit-context-submenu li.disabled {
+    color: #666;
+    cursor: not-allowed;
+}
+
+.xeokit-context-submenu li.disabled:hover {
+    background-color: transparent;
+    color: #666;
+}
+
+.submenu-arrow {
+    float: right;
+    font-size: 8px;
+    margin-top: 2px;
+}
+
+/* Tab Navigation Bar */
+.xeokit-tab-nav {
+    display: flex;
+    background-color: #333;
+    border-bottom: 1px solid #555;
+}
+
+.xeokit-tab-nav .xeokit-tab-btn {
+    flex: 1;
+    text-align: center;
+    border-right: 1px solid #555;
+    padding: 8px 12px;
+    background-color: #444;
+    color: #ccc;
+    text-decoration: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.xeokit-tab-nav .xeokit-tab-btn:last-child {
+    border-right: none;
+}
+
+.xeokit-tab-nav .xeokit-tab-btn:hover {
+    background-color: #555;
+    color: #fff;
+}
+
+.xeokit-tab-nav .xeokit-tab-btn.active {
+    background-color: #2a5aa0;
+    color: #fff;
+    border-bottom-color: #4a7bc8;
+}

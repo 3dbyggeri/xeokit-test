@@ -23,14 +23,14 @@
     pointer-events: none;
 }
 
-.xeokit-btn {
+.xeokit-toolbar .xeokit-btn {
     position: relative;
     flex: 1 1 auto;
-    color: #03103F;
-    background-color: white;
+    color: #03103F !important;
+    background-color: white !important;
     text-align: center;
     vertical-align: middle;
-    border: 2px solid #1d2453;
+    border: 2px solid #1d2453 !important;
     padding: .375rem .75rem;
     border-radius: .25rem;
     transition: color .15s ease-in-out, background-color .15s ease-in-out, border-color .15s ease-in-out, box-shadow .15s ease-in-out;
@@ -43,22 +43,22 @@
     cursor: pointer;
 }
 
-.xeokit-btn.disabled {
+.xeokit-toolbar .xeokit-btn.disabled {
     opacity: .55;
-    color: #99A4AD;
+    color: #99A4AD !important;
     border-color: #6c757d !important;
     pointer-events: none;
     cursor: not-allowed;
 }
 
-.xeokit-btn.active {
-    color: #fff;
-    background-color: #03103F;
+.xeokit-toolbar .xeokit-btn.active {
+    color: #fff !important;
+    background-color: #03103F !important;
     border-color: #03103F !important;
 }
 
-.xeokit-btn:hover:not(.disabled) {
-    color: #477dca;
+.xeokit-toolbar .xeokit-btn:hover:not(.disabled) {
+    color: #477dca !important;
     border-color: #477dca !important;
 }
 
@@ -103,6 +103,46 @@
 
 .xeokit-hide {
     min-width: 50px;
+}
+
+.xeokit-toggle-explorer {
+    min-width: 50px;
+}
+
+/* Section tool specific styling - HIDDEN */
+.xeokit-section {
+    display: none !important; /* Hide section tool button */
+}
+
+.xeokit-section-menu {
+    display: none !important; /* Hide section dropdown button */
+}
+
+/* Hide the entire section button group to remove any remaining visual elements */
+/* Target the button group that contains section buttons by its position/context */
+.xeokit-btn-group:nth-child(6) {
+    display: none !important;
+}
+
+/* Section counter styling */
+.xeokit-section-counter {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    background: #ff4444;
+    color: white;
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    font-size: 10px;
+    line-height: 18px;
+    text-align: center;
+    font-weight: bold;
+    display: none;
+}
+
+.xeokit-section-counter.visible {
+    display: block;
 }
 
 /* Tooltip styles */
