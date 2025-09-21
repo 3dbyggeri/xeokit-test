@@ -50,21 +50,33 @@ export class SectionTool extends Controller {
 
         // Menu button click handler
         if (this._menuButtonElement) {
+            console.log("SectionTool: Menu button element found, adding click listener");
             this._menuButtonElement.addEventListener("click", (e) => {
+                console.log("SectionTool: Menu button clicked, enabled:", this.getEnabled());
+
+                // Prevent event from bubbling up and triggering document click handler
+                e.preventDefault();
+                e.stopPropagation();
+
                 if (!this.getEnabled()) {
+                    console.log("SectionTool: Menu button disabled, ignoring click");
                     return;
                 }
 
-                // Show context menu
-                this._contextMenu.setContext({
-                    viewer: this.viewer,
-                    sectionPlanesPlugin: this._sectionPlanesPlugin
-                });
-                const rect = this._menuButtonElement.getBoundingClientRect();
-                this._contextMenu.show(rect.left, rect.bottom + 5);
-                console.log("SectionTool: Showing context menu, sections:", this.getNumSections());
-                e.preventDefault();
+                // Show context menu with a small delay to avoid immediate hiding
+                setTimeout(() => {
+                    console.log("SectionTool: Showing context menu");
+                    this._contextMenu.setContext({
+                        viewer: this.viewer,
+                        sectionPlanesPlugin: this._sectionPlanesPlugin
+                    });
+                    const rect = this._menuButtonElement.getBoundingClientRect();
+                    this._contextMenu.show(rect.left, rect.bottom + 5);
+                    console.log("SectionTool: Context menu shown, sections:", this.getNumSections());
+                }, 10);
             });
+        } else {
+            console.warn("SectionTool: Menu button element not found!");
         }
 
         // Update button appearance based on active state
@@ -80,11 +92,18 @@ export class SectionTool extends Controller {
 
         // Update button appearance based on enabled state
         this.on("enabled", (enabled) => {
+            console.log("SectionTool: Enabled state changed:", enabled);
             if (!enabled) {
                 this._buttonElement.classList.add("disabled");
+                if (this._menuButtonElement) {
+                    this._menuButtonElement.classList.add("disabled");
+                }
                 this.setActive(false);
             } else {
                 this._buttonElement.classList.remove("disabled");
+                if (this._menuButtonElement) {
+                    this._menuButtonElement.classList.remove("disabled");
+                }
             }
         });
 

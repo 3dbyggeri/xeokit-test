@@ -47,6 +47,7 @@ class Toolbar extends Controller {
         this._initializeLevel5Tools(toolbarElement);
 
         // Enable all tools initially
+        console.log('Toolbar: Enabling all tools initially');
         this._enableAllTools();
     }
 
@@ -271,6 +272,7 @@ class Toolbar extends Controller {
      * Enable all tools
      */
     _enableAllTools() {
+        console.log('Toolbar: _enableAllTools called');
         // Level 1 tools
         this.resetAction.setEnabled(true);
         this.fitAction.setEnabled(true);
@@ -283,7 +285,9 @@ class Toolbar extends Controller {
 
         // Level 3 tools
         this.selectionTool.setEnabled(true);
+        this.marqueeSelectionTool.setEnabled(true);
         this.hideTool.setEnabled(true);
+        this.xrayTool.setEnabled(true);
 
         // Level 4 tools
         this.measureDistanceTool.setEnabled(true);
@@ -297,6 +301,7 @@ class Toolbar extends Controller {
      * Disable all tools
      */
     _disableAllTools() {
+        console.log('Toolbar: _disableAllTools called');
         // Level 1 tools
         this.resetAction.setEnabled(false);
         this.fitAction.setEnabled(false);
@@ -309,7 +314,9 @@ class Toolbar extends Controller {
 
         // Level 3 tools
         this.selectionTool.setEnabled(false);
+        this.marqueeSelectionTool.setEnabled(false);
         this.hideTool.setEnabled(false);
+        this.xrayTool.setEnabled(false);
 
         // Level 4 tools
         this.measureDistanceTool.setEnabled(false);
@@ -362,6 +369,7 @@ class Toolbar extends Controller {
      * Disable tools when no model is loaded
      */
     onModelUnloaded() {
+        console.log('Toolbar: onModelUnloaded called, disabling all tools');
         this._disableAllTools();
     }
 

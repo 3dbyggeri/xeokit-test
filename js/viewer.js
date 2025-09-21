@@ -2,6 +2,7 @@
 import { Viewer, XKTLoaderPlugin, NavCubePlugin } from "https://unpkg.com/@xeokit/xeokit-sdk@2.6.75/dist/xeokit-sdk.es.js";
 import { Toolbar } from "./toolbar/Toolbar.js";
 import { TreeView } from "./treeview/TreeView.js";
+import { ModelsManager } from "./models/ModelsManager.js";
 import { ObjectContextMenu, CanvasContextMenu } from "./contextmenu/ContextMenu.js";
 
 // Initialize viewer
@@ -24,12 +25,8 @@ const navCube = new NavCubePlugin(viewer, {
 viewer.cameraControl.panRightClick = false;
 
 // Get DOM elements
-const projectSelect = document.getElementById('projectSelect');
 const modelSelect = document.getElementById('modelSelect');
 const toolbarElement = document.getElementById('myToolbar');
-
-// Create state for storing loaded model
-let loadedModel = null;
 
 // Store loaded properties and legend
 let modelProperties = null;
@@ -39,15 +36,12 @@ let modelLegend = null;
 window.modelProperties = null;
 window.modelLegend = null;
 
-// Track last selected and highlighted entity IDs
-let lastSelectedId = null;
-let lastHighlightedId = null;
-
 // Store current model name
 let currentModelName = null;
 
-// Store tree view and context menus for global access
+// Store tree view, models manager and context menus for global access
 let treeView = null;
+let modelsManager = null;
 let objectContextMenu = null;
 let canvasContextMenu = null;
 
@@ -56,19 +50,58 @@ const toolbar = new Toolbar(viewer, {
     toolbarElement: toolbarElement
 });
 
-// Initialize tree view after DOM is ready
-document.addEventListener('DOMContentLoaded', () => {
+// Initialize models manager and tree view after DOM is ready
+document.addEventListener('DOMContentLoaded', async () => {
+    // Initialize models manager
+    modelsManager = new ModelsManager(viewer, {
+        xktLoader: xktLoader,
+        containerElement: document.getElementById('treeViewPanel')
+    });
+
+    // Set up event handlers for models manager
+    modelsManager.onModelLoaded = (data) => {
+        console.log('Model loaded:', data.modelId);
+        // Enable toolbar tools when first model is loaded
+        if (modelsManager.getNumModelsLoaded() === 1) {
+            toolbar.onModelLoaded();
+        }
+        // Refresh the models tree to update checkbox states
+        if (treeView && treeView.currentTab === 'models') {
+            treeView.buildTree();
+        }
+    };
+
+    modelsManager.onModelUnloaded = (data) => {
+        console.log('Model unloaded:', data.modelId);
+        // Disable toolbar tools when no models are loaded
+        if (modelsManager.getNumModelsLoaded() === 0) {
+            toolbar.onModelUnloaded();
+        }
+        // Refresh the models tree to update checkbox states
+        if (treeView && treeView.currentTab === 'models') {
+            treeView.buildTree();
+        }
+    };
+
+    // Fetch models data
+    await modelsManager.fetchModels();
+
+    // Initialize tree view with models manager
     treeView = new TreeView(viewer, {
         containerElement: document.getElementById('treeViewPanel'),
-        onNodeClick: (node, event) => {
+        modelsManager: modelsManager,
+        onNodeClick: (node) => {
             // Only handle checkbox toggling - no metadata display
             console.log('Tree node clicked:', node);
         },
-        onNodeContextMenu: (node, event) => {
+        onNodeContextMenu: (node) => {
             console.log('Tree node context menu:', node);
             // Handle tree node context menu
         }
     });
+
+    // Set initial tab to models
+    treeView.switchTab('models');
 });
 
 // Initialize context menus
@@ -250,230 +283,9 @@ function showInTreeView(objectId) {
     }
 }
 
-// Initialize projects
-function initializeProjects() {
-    // Set single project option
-    projectSelect.innerHTML = '<option value="xeokit-storage-2">xeokit-storage-2</option>';
-    
-    // Load models for the default project
-    loadModelsForProject();
-}
+// Legacy model loading functions removed - now handled by ModelsManager
 
-// Load models for selected project
-async function loadModelsForProject() {
-    try {
-        // Show loading indicator
-        modelSelect.innerHTML = '<option value="">Loading models...</option>';
-
-        // Fetch models from API
-        const response = await fetch('/api/modeldata/xkt-files');
-        if (!response.ok) {
-            throw new Error(`Failed to fetch models: ${response.status}`);
-        }
-
-        const s3Objects = await response.json();
-        
-        // Transform S3 objects into model list
-        const models = s3Objects
-            .filter(obj => obj.Key.endsWith('.xkt'))
-            .map(obj => ({
-                id: obj.ETag.replace(/"/g, ''),
-                name: obj.name || obj.Key.split('/').pop().replace(/\.xkt$/i, ''), // Use 'name' from backend if available
-                url: `/api/modeldata/xkt/${encodeURIComponent(obj.Key)}`
-            }));
-
-        // Populate models dropdown
-        modelSelect.innerHTML = models.map(model =>
-            `<option value="${model.url}">${model.name}</option>`
-        ).join('');
-
-        // Load first model if available
-        if (models.length > 0) {
-            loadModel(models[0].url);
-        } else {
-            // Disable toolbar when no models available
-            toolbar.onModelUnloaded();
-        }
-
-    } catch (error) {
-        console.error('Error loading models:', error);
-        modelSelect.innerHTML = '<option value="">Error loading models</option>';
-    }
-}
-
-// Load selected model
-async function loadModel(src) {
-    try {
-        // Clear any existing models
-        if (loadedModel) {
-            loadedModel.destroy();
-            loadedModel = null;
-        }
-
-        // Extract and decode model name from URL, removing /xktmodel/ part
-        const fileName = decodeURIComponent(src.split('/').pop()); // Get the last part of URL and decode it
-        currentModelName = fileName.split('/').pop().replace('.xkt', '.rvt'); // Get last part after any remaining / and replace extension
-        
-        // Load new model
-        loadedModel = await xktLoader.load({
-            id: "model",
-            src: src,
-            edges: true
-        });
-
-        // Reset object states
-        viewer.scene.setObjectsVisible(viewer.scene.objectIds, true);
-        viewer.scene.setObjectsXRayed(viewer.scene.xrayedObjectIds, false);
-        viewer.scene.setObjectsSelected(viewer.scene.selectedObjectIds, false);
-
-        // Reset and rebuild tree view for the newly loaded model
-        if (treeView) {
-            treeView.setTreeData(null);
-            // Clear panel DOM
-            const panels = document.querySelectorAll('.xeokit-tree-panel');
-            panels.forEach(p => p.innerHTML = "");
-        }
-
-        // Auto fit view to the entire model - wait longer for model to be fully loaded
-        setTimeout(() => {
-            const scene = viewer.scene;
-            const aabb = scene.getAABB(scene.visibleObjectIds);
-            if (aabb && aabb.length === 6) {
-                // Add padding to the bounding box to avoid too tight fit
-                const padding = 0.3; // 30% padding
-                const width = aabb[3] - aabb[0];
-                const height = aabb[4] - aabb[1];
-                const depth = aabb[5] - aabb[2];
-                const maxDim = Math.max(width, height, depth);
-                const paddingAmount = maxDim * padding;
-
-                const paddedAABB = [
-                    aabb[0] - paddingAmount,
-                    aabb[1] - paddingAmount,
-                    aabb[2] - paddingAmount,
-                    aabb[3] + paddingAmount,
-                    aabb[4] + paddingAmount,
-                    aabb[5] + paddingAmount
-                ];
-
-                viewer.cameraFlight.flyTo({
-                    aabb: paddedAABB,
-                    duration: 1.0,
-                    fitFOV: 45 // Wider field of view for less tight fit
-                });
-
-                // Set pivot point to center of model
-                const center = [
-                    (aabb[0] + aabb[3]) / 2,
-                    (aabb[1] + aabb[4]) / 2,
-                    (aabb[2] + aabb[5]) / 2
-                ];
-                viewer.cameraControl.pivotPos = center;
-
-                console.log("Auto view fit applied to loaded model with padding", paddedAABB);
-            } else {
-                console.log("No valid AABB found for auto view fit");
-            }
-        }, 500); // Longer delay to ensure model is fully loaded
-
-        // Enable toolbar tools when model is loaded
-        toolbar.onModelLoaded();
-
-        // Trigger manual fit action as backup
-        setTimeout(() => {
-            if (toolbar.fitAction && toolbar.fitAction.getEnabled()) {
-                toolbar.fitAction.fit();
-                console.log("Manual fit action triggered");
-            } else {
-                // Direct fallback approach with padding
-                const scene = viewer.scene;
-                const aabb = scene.getAABB(scene.visibleObjectIds);
-                if (aabb && aabb.length === 6) {
-                    // Add padding to avoid too tight fit
-                    const padding = 0.3;
-                    const width = aabb[3] - aabb[0];
-                    const height = aabb[4] - aabb[1];
-                    const depth = aabb[5] - aabb[2];
-                    const maxDim = Math.max(width, height, depth);
-                    const paddingAmount = maxDim * padding;
-
-                    const paddedAABB = [
-                        aabb[0] - paddingAmount,
-                        aabb[1] - paddingAmount,
-                        aabb[2] - paddingAmount,
-                        aabb[3] + paddingAmount,
-                        aabb[4] + paddingAmount,
-                        aabb[5] + paddingAmount
-                    ];
-
-                    viewer.cameraFlight.flyTo({
-                        aabb: paddedAABB,
-                        duration: 1.0,
-                        fitFOV: 45
-                    });
-                    console.log("Direct view fit fallback triggered with padding");
-                } else {
-                    console.log("Fit action not available and no valid AABB for fallback");
-                }
-            }
-        }, 800);
-
-        if (currentModelName) {
-            // Fetch properties and legend from backend using model name
-            const propRes = await fetch(`/api/modeldata/properties/${encodeURIComponent(currentModelName)}`);
-            if (propRes.ok) {
-                const propData = await propRes.json();
-                modelProperties = propData.properties;
-                modelLegend = propData.legend;
-
-                // Update global references for toolbar tools
-                window.modelProperties = modelProperties;
-                window.modelLegend = modelLegend;
-
-                // Load tree view data if available
-                if (propData.treeView && treeView) {
-                    console.log('Setting tree data:', propData.treeView);
-                    treeView.setTreeData(propData.treeView);
-                    // buildTree is called automatically by setTreeData
-                } else if (treeView) {
-                    // No tree data for this model – clear any previous tree
-                    treeView.setTreeData({});
-                }
-
-                console.log('Loaded properties for model:', currentModelName);
-            } else {
-                console.warn('Failed to load properties for model:', currentModelName);
-                modelProperties = null;
-                modelLegend = null;
-                window.modelProperties = null;
-                window.modelLegend = null;
-            }
-        } else {
-            console.warn('Could not extract model name from URL');
-            modelProperties = null;
-            modelLegend = null;
-            window.modelProperties = null;
-            window.modelLegend = null;
-        }
-
-    } catch (error) {
-        console.error('Error loading model:', error);
-        modelProperties = null;
-        modelLegend = null;
-        window.modelProperties = null;
-        window.modelLegend = null;
-        // Disable toolbar on error
-        toolbar.onModelUnloaded();
-    }
-}
-
-// Event listeners
-modelSelect.addEventListener('change', (event) => {
-    const selectedUrl = event.target.value;
-    if (selectedUrl) {
-        loadModel(selectedUrl);
-    }
-});
+// Legacy event listeners removed - model loading now handled by ModelsManager
 
 // Restore highlighting and add collapse functionality
 document.addEventListener('DOMContentLoaded', () => {
@@ -865,8 +677,7 @@ window.debugContextMenu = function() {
     }
 };
 
-// Initialize
-initializeProjects();
+// Initialization now handled in DOMContentLoaded event above
 
 // Export viewer for use in other modules
 export { viewer }; 

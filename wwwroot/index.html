@@ -35,12 +35,8 @@
     </style>
 </head>
 <body>
-    <!-- Model selector UI -->
-    <div id="modelSelector">
-        <div>
-            <label for="projectSelect">Project:</label>
-            <select id="projectSelect"></select>
-        </div>
+    <!-- Model selector UI - Hidden since models are now managed via Models tab -->
+    <div id="modelSelector" style="display: none;">
         <div>
             <label for="modelSelect">Model:</label>
             <select id="modelSelect"></select>
@@ -59,6 +55,26 @@
     <!-- Tree View Panel -->
     <div id="treeViewPanel">
         <div class="xeokit-tabs">
+            <!-- Tab Navigation -->
+            <div class="xeokit-tab-nav">
+                <a href="#" class="xeokit-tab-btn xeokit-modelsTabBtn">Models</a>
+                <a href="#" class="xeokit-tab-btn xeokit-objectsTabBtn active">Objects</a>
+                <a href="#" class="xeokit-tab-btn xeokit-classesTabBtn" style="display: none;">Classes</a>
+                <a href="#" class="xeokit-tab-btn xeokit-storeysTabBtn" style="display: none;">Storeys</a>
+            </div>
+
+            <!-- Models Tab -->
+            <div class="xeokit-tab xeokit-modelsTab">
+                <div class="xeokit-tab-content">
+                    <div class="xeokit-btn-group">
+                        <button type="button" class="xeokit-loadAllModels xeokit-btn">Load all</button>
+                        <button type="button" class="xeokit-unloadAllModels xeokit-btn">Unload all</button>
+                    </div>
+                    <div class="xeokit-models xeokit-tree-panel"></div>
+                </div>
+            </div>
+
+            <!-- Objects Tab -->
             <div class="xeokit-tab xeokit-objectsTab active">
                 <div class="xeokit-tab-content">
                     <div class="xeokit-btn-group">
@@ -68,7 +84,9 @@
                     <div class="xeokit-objects xeokit-tree-panel"></div>
                 </div>
             </div>
-            <div class="xeokit-tab xeokit-classesTab">
+
+            <!-- Classes Tab - HIDDEN -->
+            <div class="xeokit-tab xeokit-classesTab" style="display: none;">
                 <div class="xeokit-tab-content">
                     <div class="xeokit-btn-group">
                         <button type="button" class="xeokit-showAllClasses xeokit-btn">Show all</button>
@@ -77,7 +95,9 @@
                     <div class="xeokit-classes xeokit-tree-panel"></div>
                 </div>
             </div>
-            <div class="xeokit-tab xeokit-storeysTab">
+
+            <!-- Storeys Tab - HIDDEN -->
+            <div class="xeokit-tab xeokit-storeysTab" style="display: none;">
                 <div class="xeokit-tab-content">
                     <div class="xeokit-btn-group">
                         <button type="button" class="xeokit-showAllStoreys xeokit-btn">Show all</button>

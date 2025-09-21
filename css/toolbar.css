@@ -109,19 +109,13 @@
     min-width: 50px;
 }
 
-/* Section tool specific styling - HIDDEN */
+/* Section tool specific styling - NOW VISIBLE */
 .xeokit-section {
-    display: none !important; /* Hide section tool button */
+    /* Section tool button is now visible */
 }
 
 .xeokit-section-menu {
-    display: none !important; /* Hide section dropdown button */
-}
-
-/* Hide the entire section button group to remove any remaining visual elements */
-/* Target the button group that contains section buttons by its position/context */
-.xeokit-btn-group:nth-child(6) {
-    display: none !important;
+    /* Section dropdown button is now visible */
 }
 
 /* Section counter styling */
