@@ -53,6 +53,7 @@ export class SectionTool extends Controller {
             console.log("SectionTool: Menu button element found, adding click listener");
             this._menuButtonElement.addEventListener("click", (e) => {
                 console.log("SectionTool: Menu button clicked, enabled:", this.getEnabled());
+                console.log("SectionTool: Menu button element:", this._menuButtonElement);
 
                 // Prevent event from bubbling up and triggering document click handler
                 e.preventDefault();
@@ -60,7 +61,8 @@ export class SectionTool extends Controller {
 
                 if (!this.getEnabled()) {
                     console.log("SectionTool: Menu button disabled, ignoring click");
-                    return;
+                    console.log("SectionTool: Enabling tool...");
+                    this.setEnabled(true);
                 }
 
                 // Show context menu with a small delay to avoid immediate hiding

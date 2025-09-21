@@ -72,6 +72,24 @@
     font-size: 1.5em;
 }
 
+/* Fix double underlines on section buttons */
+.xeokit-toolbar .xeokit-section-menu {
+    text-decoration: none !important;
+    border-bottom: none !important;
+}
+
+.xeokit-toolbar .xeokit-section-menu:before,
+.xeokit-toolbar .xeokit-section-menu:after {
+    text-decoration: none !important;
+    border-bottom: none !important;
+}
+
+/* Fix FontAwesome icon underlines */
+.xeokit-toolbar .fa-caret-down {
+    text-decoration: none !important;
+    border-bottom: none !important;
+}
+
 /* Specific button styles */
 .xeokit-reset {
     min-width: 50px;
@@ -107,46 +125,6 @@
 
 .xeokit-toggle-explorer {
     min-width: 50px;
-}
-
-/* Section tool specific styling - NOW VISIBLE */
-.xeokit-section {
-    /* Section tool button is now visible */
-}
-
-.xeokit-section-menu {
-    /* Section dropdown button is now visible */
-}
-
-/* Section counter styling */
-.xeokit-section-counter {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    background: #ff4444;
-    color: white;
-    border-radius: 50%;
-    width: 18px;
-    height: 18px;
-    font-size: 10px;
-    line-height: 18px;
-    text-align: center;
-    font-weight: bold;
-    display: none;
-}
-
-.xeokit-section-counter.visible {
-    display: block;
-}
-
-/* Tooltip styles */
-[data-tippy-content] {
-    cursor: inherit;
-}
-
-/* Tool mode cursors */
-canvas.selection-mode {
-    cursor: pointer !important;
 }
 
 canvas.hide-mode {

@@ -73,14 +73,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     modelsManager.onModelUnloaded = (data) => {
         console.log('Model unloaded:', data.modelId);
+        const numModelsLoaded = modelsManager.getNumModelsLoaded();
+        console.log('Number of models still loaded:', numModelsLoaded);
+
         // Disable toolbar tools when no models are loaded
-        if (modelsManager.getNumModelsLoaded() === 0) {
+        if (numModelsLoaded === 0) {
+            console.log('No models loaded, disabling toolbar tools');
             toolbar.onModelUnloaded();
+
+            // Only rebuild tree once when all models are unloaded
+            if (treeView && treeView.currentTab === 'models') {
+                treeView.buildTree();
+            }
         }
-        // Refresh the models tree to update checkbox states
-        if (treeView && treeView.currentTab === 'models') {
-            treeView.buildTree();
-        }
+        // Don't rebuild tree on every unload - only when all models are unloaded
     };
 
     // Fetch models data
@@ -102,6 +108,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Set initial tab to models
     treeView.switchTab('models');
+
+    // Make treeView available globally for ModelsManager
+    window.treeView = treeView;
 });
 
 // Initialize context menus
@@ -677,7 +686,48 @@ window.debugContextMenu = function() {
     }
 };
 
+// Global function to test section tool dropdown
+window.testSectionDropdown = function() {
+    if (toolbar && toolbar.sectionTool) {
+        const sectionTool = toolbar.sectionTool;
+        console.log('Section Tool Dropdown Test:');
+        console.log('- Number of sections:', sectionTool.getNumSections());
+        console.log('- Section planes:', Object.keys(sectionTool._sectionPlanesPlugin.sectionPlanes));
+        console.log('- Context menu:', sectionTool._contextMenu);
+        console.log('- Menu button element:', sectionTool._menuButtonElement);
+
+        if (sectionTool.getNumSections() === 0) {
+            console.log('To test dropdown: First create some section planes by:');
+            console.log('1. Click the section tool (cut icon) to activate');
+            console.log('2. Click on 3D objects to create section planes');
+            console.log('3. Then click the dropdown arrow to see individual slice options');
+        } else {
+            console.log('Section planes exist! Click the dropdown arrow next to the section tool to see the menu');
+        }
+    } else {
+        console.log('Section Tool not available');
+    }
+};
+
+// Global function to manually trigger section dropdown
+window.showSectionDropdown = function() {
+    if (toolbar && toolbar.sectionTool && toolbar.sectionTool._menuButtonElement) {
+        const button = toolbar.sectionTool._menuButtonElement;
+        const rect = button.getBoundingClientRect();
+        console.log('Manually triggering section dropdown at:', rect.left, rect.bottom + 5);
+
+        // Trigger the context menu manually
+        toolbar.sectionTool._contextMenu.setContext({
+            viewer: viewer,
+            sectionPlanesPlugin: toolbar.sectionTool._sectionPlanesPlugin
+        });
+        toolbar.sectionTool._contextMenu.show(rect.left, rect.bottom + 5);
+    } else {
+        console.log('Section tool or menu button not available');
+    }
+};
+
 // Initialization now handled in DOMContentLoaded event above
 
 // Export viewer for use in other modules
-export { viewer }; 
+export { viewer };

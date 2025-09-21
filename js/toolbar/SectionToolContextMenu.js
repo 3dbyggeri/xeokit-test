@@ -145,6 +145,12 @@ export class SectionToolContextMenu extends ContextMenu {
             ],
             sectionPlanesMenuItems // Individual slice items
         ];
+
+        console.log('SectionToolContextMenu: Built menu with', this.items.length, 'groups');
+        console.log('SectionToolContextMenu: Items:', this.items);
+        
+        // Call parent's _buildMenu to actually render the menu
+        super._buildMenu();
     }
 
     destroy() {
