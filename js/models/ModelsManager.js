@@ -11,6 +11,7 @@ export class ModelsManager {
         this.loadedModels = new Set();
         this.modelsData = [];
         this.projectName = 'xeokit-storage-2'; // S3 bucket name
+        this.loadedModelsTreeData = {}; // Store tree data for loaded models
 
         // Event handlers
         this.onModelLoaded = null;
@@ -122,6 +123,248 @@ export class ModelsManager {
         return [projectNode];
     }
 
+    buildStoreysTree() {
+        console.log('ModelsManager: Building storeys tree');
+        console.log('ModelsManager: loadedModelsTreeData:', this.loadedModelsTreeData);
+
+        if (this.loadedModels.size === 0) {
+            console.log('ModelsManager: No models loaded');
+            return [];
+        }
+
+        // Combine tree data from all loaded models
+        const combinedTreeData = [];
+
+        for (const modelId of this.loadedModels) {
+            const treeData = this.loadedModelsTreeData[modelId];
+            if (treeData) {
+                console.log('ModelsManager: Adding tree data from model:', modelId, treeData);
+
+                // Add model name as upper level node
+                const modelInfo = this.modelsData.find(m => m.id === modelId);
+                const modelName = modelInfo ? modelInfo.name : modelId;
+
+                // Handle different possible data structures
+                let hierarchyData = null;
+                if (treeData.hierarchyData) {
+                    // If treeData has hierarchyData property
+                    hierarchyData = treeData.hierarchyData;
+                } else if (Array.isArray(treeData)) {
+                    // If treeData is directly an array
+                    hierarchyData = treeData;
+                } else if (treeData && typeof treeData === 'object') {
+                    // If treeData is an object, try to find the hierarchy data
+                    // Look for common property names that might contain the hierarchy
+                    hierarchyData = treeData.levels || treeData.storeys || treeData.hierarchy || treeData;
+                }
+
+                if (hierarchyData) {
+                    // Flatten the structure by removing [Main] and Levels layers
+                    const flattenedChildren = this._flattenModelHierarchy(hierarchyData);
+                    
+                    const modelNode = {
+                        id: `model_${modelId}`,
+                        label: modelName,
+                        type: 'model',
+                        children: flattenedChildren
+                    };
+
+                    combinedTreeData.push(modelNode);
+                } else {
+                    console.warn('ModelsManager: No hierarchy data found for model:', modelId, treeData);
+                }
+            }
+        }
+
+        console.log('ModelsManager: Combined storeys tree data:', combinedTreeData);
+        return combinedTreeData;
+    }
+
+    _convertTreeDataToHierarchy(hierarchyData) {
+        if (!hierarchyData) {
+            return [];
+        }
+
+        // Handle different data structures
+        if (Array.isArray(hierarchyData)) {
+            return hierarchyData.map(item => {
+                const node = {
+                    id: item.id || `node_${Math.random().toString(36).substring(2, 11)}`,
+                    label: item.name || item.label || 'Unknown',
+                    type: item.type || 'storey',
+                    objectId: item.objectId || null,
+                    children: item.children ? this._convertTreeDataToHierarchy(item.children) : []
+                };
+
+                return node;
+            });
+        } else if (typeof hierarchyData === 'object') {
+            // Handle object-based hierarchy (like the sample data structure)
+            return this._convertObjectToHierarchy(hierarchyData);
+        }
+
+        return [];
+    }
+
+    _convertObjectToHierarchy(obj, parentId = '') {
+        const nodes = [];
+        
+        for (const [key, value] of Object.entries(obj)) {
+            const nodeId = parentId ? `${parentId}_${key}` : key;
+            
+            if (typeof value === 'object' && value !== null) {
+                // Check if this is a leaf node (has properties like "Family and Type")
+                const hasProperties = Object.values(value).some(v => 
+                    typeof v === 'string' || typeof v === 'number'
+                );
+                
+                if (hasProperties) {
+                    // This is a leaf node with properties
+                    const node = {
+                        id: nodeId,
+                        label: key,
+                        type: 'object',
+                        objectId: key, // Use the key as objectId for now
+                        children: []
+                    };
+                    nodes.push(node);
+                } else {
+                    // This is a container node
+                    const node = {
+                        id: nodeId,
+                        label: key,
+                        type: 'category',
+                        children: this._convertObjectToHierarchy(value, nodeId)
+                    };
+                    nodes.push(node);
+                }
+            } else {
+                // Simple value
+                const node = {
+                    id: nodeId,
+                    label: key,
+                    type: 'property',
+                    objectId: key,
+                    children: []
+                };
+                nodes.push(node);
+            }
+        }
+        
+        return nodes;
+    }
+
+    _flattenModelHierarchy(hierarchyData) {
+        if (!hierarchyData) {
+            return [];
+        }
+
+        // Handle different data structures
+        if (Array.isArray(hierarchyData)) {
+            return this._flattenArrayHierarchy(hierarchyData);
+        } else if (typeof hierarchyData === 'object') {
+            return this._flattenObjectHierarchy(hierarchyData);
+        }
+
+        return [];
+    }
+
+    _flattenArrayHierarchy(data) {
+        const result = [];
+        
+        for (const item of data) {
+            if (item.children) {
+                // Check if this is a [Main] node (contains .rvt in the name)
+                if (item.label && item.label.includes('.rvt')) {
+                    // Skip the [Main] layer and go directly to its children
+                    result.push(...this._flattenArrayHierarchy(item.children));
+                } else if (item.label && item.label.toLowerCase().includes('levels')) {
+                    // Skip the Levels layer and go directly to its children
+                    result.push(...this._flattenArrayHierarchy(item.children));
+                } else {
+                    // Regular node, process normally
+                    const node = {
+                        id: item.id || `node_${Math.random().toString(36).substring(2, 11)}`,
+                        label: item.label || item.name || 'Unknown',
+                        type: item.type || 'storey',
+                        objectId: item.objectId || null,
+                        children: this._flattenArrayHierarchy(item.children)
+                    };
+                    result.push(node);
+                }
+            } else {
+                // Leaf node
+                const node = {
+                    id: item.id || `node_${Math.random().toString(36).substring(2, 11)}`,
+                    label: item.label || item.name || 'Unknown',
+                    type: item.type || 'storey',
+                    objectId: item.objectId || null,
+                    children: []
+                };
+                result.push(node);
+            }
+        }
+        
+        return result;
+    }
+
+    _flattenObjectHierarchy(obj, parentId = '') {
+        const nodes = [];
+        
+        for (const [key, value] of Object.entries(obj)) {
+            // Skip [Main] and Levels layers
+            if (key.includes('.rvt') || key.toLowerCase().includes('levels')) {
+                if (typeof value === 'object' && value !== null) {
+                    // Recursively process the children, skipping this layer
+                    nodes.push(...this._flattenObjectHierarchy(value, parentId));
+                }
+                continue;
+            }
+            
+            const nodeId = parentId ? `${parentId}_${key}` : key;
+            
+            if (typeof value === 'object' && value !== null) {
+                // Check if this is a leaf node (has properties like "Family and Type")
+                const hasProperties = Object.values(value).some(v => 
+                    typeof v === 'string' || typeof v === 'number'
+                );
+                
+                if (hasProperties) {
+                    // This is a leaf node with properties
+                    const node = {
+                        id: nodeId,
+                        label: key,
+                        type: 'object',
+                        objectId: key,
+                        children: []
+                    };
+                    nodes.push(node);
+                } else {
+                    // This is a container node
+                    const node = {
+                        id: nodeId,
+                        label: key,
+                        type: 'category',
+                        children: this._flattenObjectHierarchy(value, nodeId)
+                    };
+                    nodes.push(node);
+                }
+            } else {
+                // Simple value
+                const node = {
+                    id: nodeId,
+                    label: key,
+                    type: 'property',
+                    objectId: key,
+                    children: []
+                };
+                nodes.push(node);
+            }
+        }
+        
+        return nodes;
+    }
+
     async loadModel(modelId) {
         console.log('ModelsManager: Loading model:', modelId);
         
@@ -170,16 +413,17 @@ export class ModelsManager {
                         window.modelProperties = propData.properties;
                         window.modelLegend = propData.legend;
 
-                        // Load tree view data if available
+                        // Store tree view data for this model
                         if (propData.treeView) {
-                            console.log('Setting tree data:', propData.treeView);
-                            window.treeView.setTreeData(propData.treeView);
-                            setTimeout(() => {
-                                console.log('Force rebuilding tree...');
-                                window.treeView.buildTree();
-                            }, 1000);
+                            console.log('Storing tree data for model:', modelId, propData.treeView);
+                            this.loadedModelsTreeData[modelId] = propData.treeView;
                         } else {
-                            window.treeView.setTreeData({});
+                            this.loadedModelsTreeData[modelId] = null;
+                        }
+
+                        // Rebuild storeys tree if we're on that tab
+                        if (window.treeView && window.treeView.currentTab === 'storeys') {
+                            window.treeView.buildTree();
                         }
                         console.log('Loaded properties for model:', modelName);
                     } else {
@@ -230,10 +474,19 @@ export class ModelsManager {
             }
 
             this.loadedModels.delete(modelId);
+
+            // Clean up tree data for this model
+            delete this.loadedModelsTreeData[modelId];
+
             console.log('ModelsManager: Model unloaded successfully:', modelId);
 
             // Update checkbox state
             this._updateModelCheckbox(modelId, false);
+
+            // Rebuild storeys tree if we're on that tab
+            if (window.treeView && window.treeView.currentTab === 'storeys') {
+                window.treeView.buildTree();
+            }
 
             // Fire event
             this._fireEvent('modelUnloaded', { modelId });

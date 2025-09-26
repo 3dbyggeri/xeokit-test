@@ -9,10 +9,10 @@ export class TreeView {
         this.onNodeContextMenu = cfg.onNodeContextMenu || (() => {});
         this.modelsManager = cfg.modelsManager || null;
 
-        this.treeData = null;
+
         this.expandedNodes = new Set();
         this.selectedNode = null;
-        this.currentTab = 'objects';
+        this.currentTab = 'storeys';
 
         this._initTabs();
         this._initEventHandlers();
@@ -26,7 +26,7 @@ export class TreeView {
         }
 
         // Add click handlers for tab buttons
-        const tabs = ['models', 'objects', 'classes', 'storeys'];
+        const tabs = ['models', 'storeys'];
         tabs.forEach(tabId => {
             const tabButton = panel.querySelector(`.xeokit-${tabId}TabBtn`);
             if (tabButton) {
@@ -46,19 +46,7 @@ export class TreeView {
         
         // Button event handlers
         document.addEventListener('click', (e) => {
-            if (e.target.classList.contains('xeokit-showAllObjects')) {
-                e.preventDefault();
-                this.showAllObjects();
-            } else if (e.target.classList.contains('xeokit-hideAllObjects')) {
-                e.preventDefault();
-                this.hideAllObjects();
-            } else if (e.target.classList.contains('xeokit-showAllClasses')) {
-                e.preventDefault();
-                this.showAllClasses();
-            } else if (e.target.classList.contains('xeokit-hideAllClasses')) {
-                e.preventDefault();
-                this.hideAllClasses();
-            } else if (e.target.classList.contains('xeokit-showAllStoreys')) {
+            if (e.target.classList.contains('xeokit-showAllStoreys')) {
                 e.preventDefault();
                 this.showAllStoreys();
             } else if (e.target.classList.contains('xeokit-hideAllStoreys')) {
@@ -71,10 +59,6 @@ export class TreeView {
     _ensureButtonsEnabled() {
         // Remove disabled attribute and class from all tree view buttons
         const buttonSelectors = [
-            '.xeokit-showAllObjects',
-            '.xeokit-hideAllObjects', 
-            '.xeokit-showAllClasses',
-            '.xeokit-hideAllClasses',
             '.xeokit-showAllStoreys',
             '.xeokit-hideAllStoreys'
         ];
@@ -117,18 +101,7 @@ export class TreeView {
         this._ensureButtonsEnabled();
     }
 
-    setTreeData(treeData) {
-        console.log('TreeView: Setting tree data:', treeData);
-        this.treeData = treeData;
-        this.clearLoadingStates();
-        
-        // Ensure DOM is ready before building tree
-        if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', () => this.buildTree());
-        } else {
-            this.buildTree();
-        }
-    }
+
 
     clearLoadingStates() {
         // Clear any loading indicators or animations
@@ -143,16 +116,6 @@ export class TreeView {
 
     buildTree() {
         console.log('TreeView: buildTree called, currentTab:', this.currentTab);
-        
-        // For models tab, we don't need treeData - we get data from ModelsManager
-        if (this.currentTab !== 'models' && !this.treeData) {
-            console.log('TreeView: No tree data available');
-            return;
-        }
-
-        if (this.currentTab !== 'models') {
-            console.log('TreeView: Tree data available:', typeof this.treeData, this.treeData);
-        }
 
         const treePanel = document.querySelector(`.xeokit-${this.currentTab}Tab .xeokit-tree-panel`);
         if (!treePanel) {
@@ -182,15 +145,12 @@ export class TreeView {
                         return;
                     }
                     break;
-                case 'objects':
-                case 'classes':
                 case 'storeys':
-                    // Check if we have loaded models
+                    // Build hierarchy from treeview data provided by loaded models
                     if (this.modelsManager && this.modelsManager.loadedModels.size > 0) {
-                        // Build hierarchy from loaded models directly
-                        hierarchyData = this._buildLoadedModelsHierarchy(this.currentTab);
+                        hierarchyData = this.modelsManager.buildStoreysTree();
                     } else {
-                        console.log('TreeView: No models loaded');
+                        console.log('TreeView: No models loaded for storeys tab');
                         return;
                     }
                     break;
@@ -205,282 +165,11 @@ export class TreeView {
         }
     }
 
-    _buildObjectsHierarchy(levels) {
-        const hierarchy = [];
-        
-        Object.entries(levels).forEach(([levelName, levelData]) => {
-            const levelNode = {
-                id: `level_${levelName}`,
-                label: levelName,
-                type: 'level',
-                children: []
-            };
 
-            Object.entries(levelData).forEach(([categoryName, categoryData]) => {
-                if (categoryName === 'Levels') return; // Skip nested levels for now
-                
-                const categoryNode = {
-                    id: `category_${levelName}_${categoryName}`,
-                    label: categoryName,
-                    type: 'category',
-                    children: []
-                };
 
-                Object.entries(categoryData).forEach(([objectId, objectData]) => {
-                    const objectNode = {
-                        id: objectId,
-                        label: objectData['Family and Type'] || objectId,
-                        type: 'object',
-                        objectId: objectId
-                    };
-                    categoryNode.children.push(objectNode);
-                });
 
-                if (categoryNode.children.length > 0) {
-                    levelNode.children.push(categoryNode);
-                }
-            });
 
-            if (levelNode.children.length > 0) {
-                hierarchy.push(levelNode);
-            }
-        });
 
-        return hierarchy;
-    }
-
-    _buildClassesHierarchy(levels) {
-        const classMap = new Map();
-        
-        // Collect all objects by their class (Family and Type)
-        Object.entries(levels).forEach(([, levelData]) => {
-            Object.entries(levelData).forEach(([categoryName, categoryData]) => {
-                if (categoryName === 'Levels') return;
-                
-                Object.entries(categoryData).forEach(([objectId, objectData]) => {
-                    const className = objectData['Family and Type'] || 'Unknown';
-                    if (!classMap.has(className)) {
-                        classMap.set(className, []);
-                    }
-                    classMap.get(className).push({
-                        id: objectId,
-                        label: objectId,
-                        type: 'object',
-                        objectId: objectId
-                    });
-                });
-            });
-        });
-
-        // Convert to hierarchy
-        const hierarchy = [];
-        classMap.forEach((objects, className) => {
-            hierarchy.push({
-                id: `class_${className}`,
-                label: `${className} (${objects.length})`,
-                type: 'class',
-                children: objects
-            });
-        });
-
-        return hierarchy;
-    }
-
-    _buildStoreysHierarchy(levels) {
-        const hierarchy = [];
-        
-        Object.entries(levels).forEach(([levelName, levelData]) => {
-            const levelNode = {
-                id: `storey_${levelName}`,
-                label: levelName,
-                type: 'storey',
-                children: []
-            };
-
-            // Group by category within each level
-            Object.entries(levelData).forEach(([categoryName, categoryData]) => {
-                if (categoryName === 'Levels') return;
-                
-                const categoryNode = {
-                    id: `storey_category_${levelName}_${categoryName}`,
-                    label: categoryName,
-                    type: 'category',
-                    children: []
-                };
-
-                Object.entries(categoryData).forEach(([objectId, objectData]) => {
-                    const objectNode = {
-                        id: objectId,
-                        label: objectData['Family and Type'] || objectId,
-                        type: 'object',
-                        objectId: objectId
-                    };
-                    categoryNode.children.push(objectNode);
-                });
-
-                if (categoryNode.children.length > 0) {
-                    levelNode.children.push(categoryNode);
-                }
-            });
-
-            if (levelNode.children.length > 0) {
-                hierarchy.push(levelNode);
-            }
-        });
-
-        return hierarchy;
-    }
-
-    _buildLoadedModelsHierarchy(tabType) {
-        console.log('TreeView: Building hierarchy for loaded models, tab:', tabType);
-        const hierarchy = [];
-
-        // Get all loaded models from the viewer scene
-        this.modelsManager.loadedModels.forEach(modelId => {
-            const model = this.viewer.scene.models[modelId];
-            if (model) {
-                console.log('TreeView: Processing model:', modelId, model);
-
-                // Get model name from modelsManager
-                const modelInfo = this.modelsManager.modelsData.find(m => m.id === modelId);
-                const modelName = modelInfo ? modelInfo.name : modelId;
-
-                // Build hierarchy from model objects
-                const modelHierarchy = this._buildModelObjectsHierarchy(model, tabType);
-
-                if (modelHierarchy.length > 0) {
-                    const modelNode = {
-                        id: `model_${modelId}`,
-                        label: modelName,
-                        type: 'model',
-                        children: modelHierarchy
-                    };
-                    hierarchy.push(modelNode);
-                }
-            }
-        });
-
-        console.log('TreeView: Built loaded models hierarchy:', hierarchy);
-        return hierarchy;
-    }
-
-    _buildModelObjectsHierarchy(model, tabType) {
-        const hierarchy = [];
-        const objects = model.objects;
-
-        if (!objects || Object.keys(objects).length === 0) {
-            console.log('TreeView: No objects found in model');
-            return hierarchy;
-        }
-
-        console.log('TreeView: Found', Object.keys(objects).length, 'objects in model');
-
-        // Group objects by type for simple hierarchy
-        const typeGroups = {};
-
-        Object.values(objects).forEach(object => {
-            if (object.visible !== false) { // Only include visible objects
-                const type = object.type || 'Unknown';
-                if (!typeGroups[type]) {
-                    typeGroups[type] = [];
-                }
-                typeGroups[type].push(object);
-            }
-        });
-
-        // Create hierarchy nodes
-        Object.entries(typeGroups).forEach(([type, objectList]) => {
-            const typeNode = {
-                id: `type_${type}`,
-                label: `${type} (${objectList.length})`,
-                type: 'category',
-                children: objectList.map(obj => ({
-                    id: obj.id,
-                    label: obj.id,
-                    type: 'object',
-                    objectId: obj.id
-                }))
-            };
-            hierarchy.push(typeNode);
-        });
-
-        return hierarchy;
-    }
-
-    _buildMultiModelHierarchy(tabType) {
-        console.log('TreeView: Building multi-model hierarchy for tab:', tabType);
-        const hierarchy = [];
-
-        if (!this.modelsManager || !this.treeData) {
-            console.log('TreeView: No models manager or tree data available');
-            return hierarchy;
-        }
-
-        // Get loaded model information
-        const loadedModelIds = Array.from(this.modelsManager.loadedModels);
-        console.log('TreeView: Loaded model IDs:', loadedModelIds);
-
-        // For each loaded model, create a top-level node
-        loadedModelIds.forEach(modelId => {
-            const modelInfo = this.modelsManager.modelsInfo[modelId];
-            const modelName = modelInfo ? modelInfo.name : `Model ${modelId}`;
-
-            console.log('TreeView: Processing model:', modelId, modelName);
-
-            // Find the tree data for this model
-            const modelTreeData = this._findModelTreeData(modelId);
-            if (!modelTreeData || !modelTreeData.Levels) {
-                console.log('TreeView: No tree data found for model:', modelId);
-                return;
-            }
-
-            // Build hierarchy for this model
-            let modelHierarchy = [];
-            switch (tabType) {
-                case 'objects':
-                    modelHierarchy = this._buildObjectsHierarchy(modelTreeData.Levels);
-                    break;
-                case 'classes':
-                    modelHierarchy = this._buildClassesHierarchy(modelTreeData.Levels);
-                    break;
-                case 'storeys':
-                    modelHierarchy = this._buildStoreysHierarchy(modelTreeData.Levels);
-                    break;
-            }
-
-            // Create model node with its hierarchy as children
-            if (modelHierarchy.length > 0) {
-                const modelNode = {
-                    id: `model_${modelId}`,
-                    label: modelName,
-                    type: 'model',
-                    children: modelHierarchy
-                };
-                hierarchy.push(modelNode);
-            }
-        });
-
-        console.log('TreeView: Built multi-model hierarchy:', hierarchy);
-        return hierarchy;
-    }
-
-    _findModelTreeData(modelId) {
-        // Try to find tree data for the specific model
-        // This might need to be adjusted based on how tree data is structured
-        if (this.treeData && typeof this.treeData === 'object') {
-            // If treeData is keyed by model ID
-            if (this.treeData[modelId]) {
-                return this.treeData[modelId];
-            }
-
-            // If treeData has a single project, use that
-            const projectData = Object.values(this.treeData)[0];
-            if (projectData) {
-                return projectData;
-            }
-        }
-        return null;
-    }
 
     _createTreeElement(nodes) {
         const ul = document.createElement('ul');
@@ -595,112 +284,7 @@ export class TreeView {
         }
     }
 
-    selectNodeById(elementId) {
-        if (!this.treeData) {
-            console.warn('TreeView: No tree data available for selection');
-            return false;
-        }
 
-        console.log('TreeView: Looking for element ID:', elementId);
-
-        // Find the node with matching elementId in the current hierarchy
-        const findNode = (nodes, targetId) => {
-            if (!nodes || !Array.isArray(nodes)) return null;
-
-            for (const node of nodes) {
-                // Check if this node matches (handle both string and number IDs)
-                if (node.objectId == targetId || node.id == targetId) {
-                    console.log('TreeView: Found matching node:', node);
-                    return node;
-                }
-
-                // Search in children
-                if (node.children && node.children.length > 0) {
-                    const found = findNode(node.children, targetId);
-                    if (found) return found;
-                }
-            }
-            return null;
-        };
-
-        // Get current hierarchy data based on active tab
-        let hierarchyData;
-        try {
-            const projectData = Object.values(this.treeData)[0]; // Get first project
-            if (!projectData || !projectData.Levels) {
-                console.warn('TreeView: No project data available');
-                return false;
-            }
-
-            switch (this.currentTab) {
-                case 'objects':
-                    hierarchyData = this._buildObjectsHierarchy(projectData.Levels);
-                    break;
-                case 'classes':
-                    hierarchyData = this._buildClassesHierarchy(projectData.Levels);
-                    break;
-                case 'storeys':
-                    hierarchyData = this._buildStoreysHierarchy(projectData.Levels);
-                    break;
-                default:
-                    hierarchyData = this._buildObjectsHierarchy(projectData.Levels);
-            }
-        } catch (e) {
-            console.error('TreeView: Error building hierarchy data for selection:', e);
-            return false;
-        }
-
-        const targetNode = findNode(hierarchyData, elementId);
-        if (!targetNode) {
-            console.warn('TreeView: Node not found for element ID:', elementId);
-            console.log('TreeView: Available nodes:', hierarchyData.slice(0, 3));
-            return false;
-        }
-
-        // Expand all parent nodes to make the target visible
-        const expandParents = (nodes, targetId, parentPath = []) => {
-            if (!nodes || !Array.isArray(nodes)) return false;
-
-            for (const node of nodes) {
-                const currentPath = [...parentPath, node.id];
-
-                if (node.objectId == targetId || node.id == targetId) {
-                    // Found target, expand all parents in the path
-                    parentPath.forEach(parentId => {
-                        this.expandedNodes.add(parentId);
-                        console.log('TreeView: Expanding parent node:', parentId);
-                    });
-                    return true;
-                }
-
-                if (node.children && node.children.length > 0) {
-                    if (expandParents(node.children, targetId, currentPath)) {
-                        return true;
-                    }
-                }
-            }
-            return false;
-        };
-
-        // Expand parent nodes
-        expandParents(hierarchyData, elementId);
-
-        // Rebuild tree to show expanded nodes
-        this.buildTree();
-
-        // Select the node after a short delay to ensure DOM is updated
-        setTimeout(() => {
-            this.selectNode(targetNode.id);
-
-            // Scroll the selected node into view
-            const nodeElement = document.querySelector(`[data-node-id="${targetNode.id}"] .tree-node`);
-            if (nodeElement) {
-                nodeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-        }, 100);
-
-        return true;
-    }
 
     toggleVisibility(node, visible) {
         console.log('TreeView: toggleVisibility called', node, visible);
@@ -786,33 +370,17 @@ export class TreeView {
     }
 
     // Button action handlers
-    showAllObjects() {
-        console.log('TreeView: Show all objects');
+    showAllStoreys() {
+        console.log('TreeView: Show all storeys');
         this.viewer.scene.setObjectsVisible(this.viewer.scene.objectIds, true);
         this.viewer.scene.setObjectsXRayed(this.viewer.scene.xrayedObjectIds, false);
         this._updateAllCheckboxes(true);
     }
 
-    hideAllObjects() {
-        console.log('TreeView: Hide all objects');
+    hideAllStoreys() {
+        console.log('TreeView: Hide all storeys');
         this.viewer.scene.setObjectsVisible(this.viewer.scene.visibleObjectIds, false);
         this._updateAllCheckboxes(false);
-    }
-
-    showAllClasses() {
-        this.showAllObjects();
-    }
-
-    hideAllClasses() {
-        this.hideAllObjects();
-    }
-
-    showAllStoreys() {
-        this.showAllObjects();
-    }
-
-    hideAllStoreys() {
-        this.hideAllObjects();
     }
 
     _updateAllCheckboxes(checked) {
