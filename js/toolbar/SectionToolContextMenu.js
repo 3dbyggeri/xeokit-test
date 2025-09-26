@@ -48,7 +48,11 @@ export class SectionToolContextMenu extends ContextMenu {
                 },
 
                 doHoverLeave: (context) => {
-                    sectionPlanesPlugin.hideControl();
+                    // Don't hide control if it's currently being shown for editing
+                    const currentlyShownControl = sectionPlanesPlugin.getShownControl();
+                    if (!currentlyShownControl || currentlyShownControl !== sectionPlane.id) {
+                        sectionPlanesPlugin.hideControl();
+                    }
                 },
 
                 items: [ // Submenu for individual slice actions
@@ -65,7 +69,7 @@ export class SectionToolContextMenu extends ContextMenu {
                             getTitle: (context) => "Edit",
                             getEnabled: () => sectionPlane.active,
                             doAction: (context) => {
-                                sectionPlanesPlugin.hideControl();
+                                // Show the control for editing
                                 sectionPlanesPlugin.showControl(sectionPlane.id);
 
                                 // Fly camera to section plane
@@ -145,6 +149,12 @@ export class SectionToolContextMenu extends ContextMenu {
             ],
             sectionPlanesMenuItems // Individual slice items
         ];
+
+        console.log('SectionToolContextMenu: Built menu with', this.items.length, 'groups');
+        console.log('SectionToolContextMenu: Items:', this.items);
+        
+        // Call parent's _buildMenu to actually render the menu
+        super._buildMenu();
     }
 
     destroy() {

@@ -72,6 +72,21 @@
     font-size: 1.5em;
 }
 
+/* Fix double underlines on section buttons - only affect text decoration, not button borders */
+.xeokit-toolbar .xeokit-section-menu {
+    text-decoration: none !important;
+}
+
+.xeokit-toolbar .xeokit-section-menu:before,
+.xeokit-toolbar .xeokit-section-menu:after {
+    text-decoration: none !important;
+}
+
+/* Fix FontAwesome icon underlines */
+.xeokit-toolbar .fa-caret-down {
+    text-decoration: none !important;
+}
+
 /* Specific button styles */
 .xeokit-reset {
     min-width: 50px;
@@ -107,52 +122,6 @@
 
 .xeokit-toggle-explorer {
     min-width: 50px;
-}
-
-/* Section tool specific styling - HIDDEN */
-.xeokit-section {
-    display: none !important; /* Hide section tool button */
-}
-
-.xeokit-section-menu {
-    display: none !important; /* Hide section dropdown button */
-}
-
-/* Hide the entire section button group to remove any remaining visual elements */
-/* Target the button group that contains section buttons by its position/context */
-.xeokit-btn-group:nth-child(6) {
-    display: none !important;
-}
-
-/* Section counter styling */
-.xeokit-section-counter {
-    position: absolute;
-    top: -5px;
-    right: -5px;
-    background: #ff4444;
-    color: white;
-    border-radius: 50%;
-    width: 18px;
-    height: 18px;
-    font-size: 10px;
-    line-height: 18px;
-    text-align: center;
-    font-weight: bold;
-    display: none;
-}
-
-.xeokit-section-counter.visible {
-    display: block;
-}
-
-/* Tooltip styles */
-[data-tippy-content] {
-    cursor: inherit;
-}
-
-/* Tool mode cursors */
-canvas.selection-mode {
-    cursor: pointer !important;
 }
 
 canvas.hide-mode {

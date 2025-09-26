@@ -271,6 +271,20 @@
     color: #666;
 }
 
+/* Separator styling - make it thin and non-interactive */
+.xeokit-context-menu li.separator {
+    padding: 0 !important;
+    margin: 0 !important;
+    height: 1px !important;
+    cursor: default !important;
+    pointer-events: none !important;
+    background-color: transparent !important;
+}
+
+.xeokit-context-menu li.separator:hover {
+    background-color: transparent !important;
+}
+
 /* Submenu styling */
 .xeokit-context-menu li.has-submenu {
     position: relative;
