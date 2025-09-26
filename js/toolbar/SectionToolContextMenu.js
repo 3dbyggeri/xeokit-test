@@ -48,7 +48,11 @@ export class SectionToolContextMenu extends ContextMenu {
                 },
 
                 doHoverLeave: (context) => {
-                    sectionPlanesPlugin.hideControl();
+                    // Don't hide control if it's currently being shown for editing
+                    const currentlyShownControl = sectionPlanesPlugin.getShownControl();
+                    if (!currentlyShownControl || currentlyShownControl !== sectionPlane.id) {
+                        sectionPlanesPlugin.hideControl();
+                    }
                 },
 
                 items: [ // Submenu for individual slice actions
@@ -65,9 +69,31 @@ export class SectionToolContextMenu extends ContextMenu {
                             getTitle: (context) => "Edit",
                             getEnabled: () => sectionPlane.active,
                             doAction: (context) => {
-                                // Simply show the control for editing - no camera flight
-                                sectionPlanesPlugin.hideControl();
+                                // Show the control for editing
                                 sectionPlanesPlugin.showControl(sectionPlane.id);
+
+                                // Fly camera to section plane
+                                const sectionPlanePos = sectionPlane.pos;
+                                const aabb = this._viewer.scene.aabb;
+                                const center = [
+                                    (aabb[0] + aabb[3]) / 2,
+                                    (aabb[1] + aabb[4]) / 2,
+                                    (aabb[2] + aabb[5]) / 2
+                                ];
+
+                                const targetAABB = [
+                                    aabb[0] + sectionPlanePos[0] - center[0],
+                                    aabb[1] + sectionPlanePos[1] - center[1],
+                                    aabb[2] + sectionPlanePos[2] - center[2],
+                                    aabb[3] + sectionPlanePos[0] - center[0],
+                                    aabb[4] + sectionPlanePos[1] - center[1],
+                                    aabb[5] + sectionPlanePos[2] - center[2]
+                                ];
+
+                                this._viewer.cameraFlight.flyTo({
+                                    aabb: targetAABB,
+                                    fitFOV: 65
+                                });
                             }
                         },
                         {

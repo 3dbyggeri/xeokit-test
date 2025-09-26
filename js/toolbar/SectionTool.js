@@ -87,7 +87,8 @@ export class SectionTool extends Controller {
                 this._buttonElement.classList.add("active");
                 console.log("SectionTool: Activated - Click on objects to create section planes");
             } else {
-                this._buttonElement.classList.remove("active");
+                this._buttonElement.classList.remove("active");                
+                this._sectionPlanesPlugin.hideControl();
                 console.log("SectionTool: Deactivated");
             }
         });

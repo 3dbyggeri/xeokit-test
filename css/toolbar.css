@@ -72,22 +72,19 @@
     font-size: 1.5em;
 }
 
-/* Fix double underlines on section buttons */
+/* Fix double underlines on section buttons - only affect text decoration, not button borders */
 .xeokit-toolbar .xeokit-section-menu {
     text-decoration: none !important;
-    border-bottom: none !important;
 }
 
 .xeokit-toolbar .xeokit-section-menu:before,
 .xeokit-toolbar .xeokit-section-menu:after {
     text-decoration: none !important;
-    border-bottom: none !important;
 }
 
 /* Fix FontAwesome icon underlines */
 .xeokit-toolbar .fa-caret-down {
     text-decoration: none !important;
-    border-bottom: none !important;
 }
 
 /* Specific button styles */
