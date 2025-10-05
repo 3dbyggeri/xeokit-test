@@ -12,6 +12,7 @@ import { XRayTool } from "./XRayTool.js";
 import { MeasureDistanceTool } from "./MeasureDistanceTool.js";
 import { MeasureAngleTool } from "./MeasureAngleTool.js";
 import { SectionTool } from "./SectionTool.js";
+import { GlasshouseLinkTool } from "./GlasshouseLinkTool.js";
 
 /**
  * Toolbar Manager - Coordinates all toolbar tools
@@ -127,6 +128,15 @@ class Toolbar extends Controller {
                     <!-- Section menu button -->
                     <button type="button" class="xeokit-section-menu xeokit-btn fa fa-caret-down fa-2x"
                             data-tippy-content="Section options" title="Section options"></button>
+                </div>
+
+                <!-- Glasshouse Link tool -->
+                <div class="xeokit-btn-group" role="group">
+                    <!-- Glasshouse Link button -->
+                    <button type="button" class="xeokit-glasshouse-link xeokit-btn fa fa-link fa-2x"
+                            data-tippy-content="Glasshouse Link - Click to connect" title="Glasshouse Link">
+                        <span class="xeokit-glasshouse-counter">0</span>
+                    </button>
                 </div>
             </div>
         `;
@@ -244,7 +254,7 @@ class Toolbar extends Controller {
     }
 
     /**
-     * Initialize Level 5 tools (Most Complex - Section Tool)
+     * Initialize Level 5 tools (Most Complex - Section Tool and Glasshouse Link)
      */
     _initializeLevel5Tools(toolbarElement) {
         // Section Tool
@@ -253,6 +263,12 @@ class Toolbar extends Controller {
             menuButtonElement: toolbarElement.querySelector(".xeokit-section-menu"),
             counterElement: toolbarElement.querySelector(".xeokit-section-counter"),
             active: false
+        });
+
+        // Glasshouse Link Tool
+        this.glasshouseLinkTool = new GlasshouseLinkTool(this, {
+            buttonElement: toolbarElement.querySelector(".xeokit-glasshouse-link"),
+            counterElement: toolbarElement.querySelector(".xeokit-glasshouse-counter")
         });
 
         // Set up mutual exclusion for all interaction tools (including section tool)
@@ -295,6 +311,8 @@ class Toolbar extends Controller {
 
         // Level 5 tools
         this.sectionTool.setEnabled(true);
+        // Note: Glasshouse Link tool is always enabled (like toggle explorer)
+        this.glasshouseLinkTool.setEnabled(true);
     }
 
     /**
@@ -324,6 +342,8 @@ class Toolbar extends Controller {
 
         // Level 5 tools
         this.sectionTool.setEnabled(false);
+        // Note: Glasshouse Link tool remains enabled even when no models are loaded
+        // this.glasshouseLinkTool.setEnabled(false); // Keep enabled
     }
 
     /**

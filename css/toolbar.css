@@ -146,3 +146,170 @@ canvas.measure-mode {
         margin-bottom: 0.5rem;
     }
 }
+
+/* Glasshouse Login Dialog Styles */
+.glasshouse-login-dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10000;
+}
+
+.glasshouse-login-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.glasshouse-login-modal {
+    background: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    width: 400px;
+    max-width: 90vw;
+    max-height: 90vh;
+    overflow: auto;
+}
+
+.glasshouse-login-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 20px 10px 20px;
+    border-bottom: 1px solid #eee;
+}
+
+.glasshouse-login-header h3 {
+    margin: 0;
+    color: #1d2453;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.glasshouse-login-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #666;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+}
+
+.glasshouse-login-close:hover {
+    background-color: #f0f0f0;
+}
+
+.glasshouse-login-content {
+    padding: 20px;
+}
+
+.glasshouse-login-form {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.glasshouse-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.glasshouse-form-group label {
+    font-weight: 500;
+    color: #333;
+    font-size: 14px;
+}
+
+.glasshouse-form-group input,
+.glasshouse-form-group select {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    transition: border-color 0.2s;
+}
+
+.glasshouse-form-group input:focus,
+.glasshouse-form-group select:focus {
+    outline: none;
+    border-color: #1d2453;
+    box-shadow: 0 0 0 2px rgba(29, 36, 83, 0.1);
+}
+
+.glasshouse-form-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 20px;
+}
+
+.glasshouse-btn-cancel,
+.glasshouse-btn-connect {
+    padding: 8px 16px;
+    border: none;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.glasshouse-btn-cancel {
+    background-color: #f8f9fa;
+    color: #6c757d;
+    border: 1px solid #dee2e6;
+}
+
+.glasshouse-btn-cancel:hover {
+    background-color: #e9ecef;
+}
+
+.glasshouse-btn-connect {
+    background-color: #1d2453;
+    color: white;
+}
+
+.glasshouse-btn-connect:hover {
+    background-color: #151b3f;
+}
+
+.glasshouse-login-status {
+    margin-top: 15px;
+    padding: 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    text-align: center;
+}
+
+.glasshouse-status-info {
+    background-color: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+
+.glasshouse-status-success {
+    background-color: #d4edda;
+    color: #155724;
+    border: 1px solid #c3e6cb;
+}
+
+.glasshouse-status-error {
+    background-color: #f8d7da;
+    color: #721c24;
+    border: 1px solid #f5c6cb;
+}

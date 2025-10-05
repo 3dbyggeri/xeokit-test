@@ -1,7 +1,12 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
+const axios = require('axios');
+
+// Load environment variables - try config.env first, then .env
+require('dotenv').config({ path: './wwwroot/config.env' });
+require('dotenv').config(); // This will override with .env if it exists
+
 const mongoose = require('mongoose');
 
 const app = express();
@@ -356,7 +361,7 @@ app.get('/api/modeldata/xkt-files', async (req, res) => {
 app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
     try {
         const key = decodeURIComponent(req.params.key);
-        
+
         // Get the object from S3
         const s3Object = await s3.getObject({
             Bucket: process.env.S3_BUCKET,
@@ -366,7 +371,7 @@ app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
         // Set appropriate headers
         res.setHeader('Content-Type', 'application/octet-stream');
         res.setHeader('Content-Length', s3Object.ContentLength);
-        
+
         // Send the file data
         res.send(s3Object.Body);
 
@@ -408,6 +413,271 @@ app.get('/api/modeldata/properties/:modelName', async (req, res) => {
             message: err.message 
         });
     }
+});
+
+// Glasshouse API endpoints
+app.post('/api/glasshouse/login', async (req, res) => {
+    try {
+        const { email, password, server } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
+
+        const glasshouseServer = server || 'app.glasshousebim.com';
+        const loginUrl = `https://${glasshouseServer}/api/v1/users/sign_in.json`;
+
+        console.log(`Attempting login to: ${loginUrl}`);
+        console.log(`Email: ${email}`);
+
+        // Make login request to Glasshouse API
+        const response = await axios.post(loginUrl,
+            `email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`,
+            {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'
+                },
+                timeout: 10000 // 10 second timeout
+            }
+        );
+
+        console.log('Login response status:', response.status);
+        console.log('Login response data keys:', Object.keys(response.data || {}));
+
+        if (response.data && response.data.user && response.data.user.api_key) {
+            console.log('Login successful, API key obtained');
+            res.json({
+                success: true,
+                apiKey: response.data.user.api_key,
+                accessToken: response.data.access_token
+            });
+        } else {
+            console.log('Login failed: Invalid response structure');
+            res.status(401).json({ error: 'Invalid credentials or unexpected response format' });
+        }
+    } catch (error) {
+        console.error('Glasshouse login error details:');
+        console.error('- Message:', error.message);
+        console.error('- Status:', error.response?.status);
+        console.error('- Status Text:', error.response?.statusText);
+        console.error('- Response Data:', error.response?.data);
+        console.error('- Request URL:', error.config?.url);
+
+        res.status(401).json({
+            error: 'Authentication failed',
+            details: {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                responseData: error.response?.data
+            }
+        });
+    }
+});
+
+app.get('/api/glasshouse/user-info', async (req, res) => {
+    try {
+        // Try to get API key from both query params and headers (for flexibility)
+        const apiKey = req.query.apiKey || req.headers['access-token'] || req.headers['authorization'];
+        const server = req.query.server || 'app.glasshousebim.com';
+
+        if (!apiKey) {
+            return res.status(400).json({ error: 'API key is required (provide as query param apiKey or header access-token)' });
+        }
+
+        const glasshouseServer = server;
+        const userInfoUrl = `https://${glasshouseServer}/api/v1/users/info`;
+
+        console.log(`Making request to: ${userInfoUrl}`);
+        console.log(`Using API key: ${apiKey.substring(0, 10)}...`);
+
+        const response = await axios.get(userInfoUrl, {
+            headers: {
+                'access-token': apiKey,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            timeout: 10000 // 10 second timeout
+        });
+
+        console.log('User info response status:', response.status);
+        console.log('User info response data keys:', Object.keys(response.data));
+
+        // Extract pusher channel name from response
+        let channelName = '';
+        const data = response.data;
+
+        for (const key in data) {
+            if (key !== 'guid' && key !== 'type' && key !== 'disciplines' &&
+                key !== 'entry_status' && key !== 'specifications' && key !== 'bim_object_count') {
+                if (typeof data[key] === 'object' && data[key] && data[key].pusher_channel_name) {
+                    channelName = data[key].pusher_channel_name;
+                    console.log(`Found pusher channel name: ${channelName}`);
+                    break;
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            channelName: channelName,
+            userInfo: data
+        });
+    } catch (error) {
+        console.error('Get user info error details:');
+        console.error('- Message:', error.message);
+        console.error('- Status:', error.response?.status);
+        console.error('- Status Text:', error.response?.statusText);
+        console.error('- Response Data:', error.response?.data);
+        console.error('- Request URL:', error.config?.url);
+        console.error('- Request Headers:', error.config?.headers);
+
+        res.status(500).json({
+            error: 'Failed to get user info',
+            details: {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                responseData: error.response?.data
+            }
+        });
+    }
+});
+
+// Test connection endpoint - matches what C# code expects
+app.get('/api/glasshouse/test-connection', async (req, res) => {
+    try {
+        // Try to get API key from both query params and headers (for flexibility)
+        const apiKey = req.query.apiKey || req.headers['access-token'] || req.headers['authorization'];
+        const server = req.query.server || 'app.glasshousebim.com';
+
+        if (!apiKey) {
+            return res.status(400).json({
+                success: false,
+                error: 'API key is required (provide as query param apiKey or header access-token)'
+            });
+        }
+
+        const glasshouseServer = server;
+        const userInfoUrl = `https://${glasshouseServer}/api/v1/users/info`;
+
+        console.log(`Testing connection to: ${userInfoUrl}`);
+        console.log(`Using API key: ${apiKey.substring(0, 10)}...`);
+
+        const response = await axios.get(userInfoUrl, {
+            headers: {
+                'access-token': apiKey,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            timeout: 10000 // 10 second timeout
+        });
+
+        console.log('Test connection response status:', response.status);
+
+        if (response.status === 200 && response.data) {
+            res.json({
+                success: true,
+                message: 'Connection successful',
+                userInfo: response.data
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                error: 'Unexpected response from server'
+            });
+        }
+    } catch (error) {
+        console.error('Test connection error details:');
+        console.error('- Message:', error.message);
+        console.error('- Status:', error.response?.status);
+        console.error('- Status Text:', error.response?.statusText);
+        console.error('- Response Data:', error.response?.data);
+
+        res.status(500).json({
+            success: false,
+            error: 'Connection test failed',
+            details: {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                responseData: error.response?.data
+            }
+        });
+    }
+});
+
+app.get('/api/glasshouse/config', (req, res) => {
+    // Return Pusher configuration (keep sensitive data on server)
+    res.json({
+        pusherKey: process.env.PUSHER_KEY || '5e96c4cf2b1522a8f112',
+        pusherCluster: process.env.PUSHER_CLUSTER || 'eu'
+    });
+});
+
+// Test endpoints for Glasshouse Link testing
+app.post('/api/test/send-select', async (req, res) => {
+    try {
+        const { channel, guids } = req.body;
+
+        if (!channel || !guids || !Array.isArray(guids)) {
+            return res.status(400).json({ error: 'Channel and guids array are required' });
+        }
+
+        // Initialize Pusher for testing
+        const Pusher = require('pusher');
+        const pusher = new Pusher({
+            appId: process.env.PUSHER_APP_ID || '1906088',
+            key: process.env.PUSHER_KEY || '5e96c4cf2b1522a8f112',
+            secret: process.env.PUSHER_SECRET || 'b8b8b8b8b8b8b8b8b8b8',
+            cluster: process.env.PUSHER_CLUSTER || 'eu',
+            useTLS: true
+        });
+
+        await pusher.trigger(channel, 'SelectEntries', {
+            data: JSON.stringify({ guids })
+        });
+
+        res.json({ success: true, message: 'Select message sent' });
+    } catch (error) {
+        console.error('Test send-select error:', error.message);
+        res.status(500).json({ error: 'Failed to send select message' });
+    }
+});
+
+app.post('/api/test/send-isolate', async (req, res) => {
+    try {
+        const { channel, guids } = req.body;
+
+        if (!channel || !guids || !Array.isArray(guids)) {
+            return res.status(400).json({ error: 'Channel and guids array are required' });
+        }
+
+        // Initialize Pusher for testing
+        const Pusher = require('pusher');
+        const pusher = new Pusher({
+            appId: process.env.PUSHER_APP_ID || '1906088',
+            key: process.env.PUSHER_KEY || '5e96c4cf2b1522a8f112',
+            secret: process.env.PUSHER_SECRET || 'b8b8b8b8b8b8b8b8b8b8',
+            cluster: process.env.PUSHER_CLUSTER || 'eu',
+            useTLS: true
+        });
+
+        await pusher.trigger(channel, 'IsolateEntries', {
+            data: JSON.stringify({ guids })
+        });
+
+        res.json({ success: true, message: 'Isolate message sent' });
+    } catch (error) {
+        console.error('Test send-isolate error:', error.message);
+        res.status(500).json({ error: 'Failed to send isolate message' });
+    }
+});
+
+// Serve test page for Glasshouse Link
+app.get('/test-glasshouse', (req, res) => {
+    res.sendFile(path.join(__dirname, 'test-glasshouse-link.html'));
 });
 
 // Serve index.html for the root route

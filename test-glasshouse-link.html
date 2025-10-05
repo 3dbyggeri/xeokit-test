@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Glasshouse Link Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .test-section h3 {
+            margin-top: 0;
+            color: #1d2453;
+        }
+        button {
+            background-color: #1d2453;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #151b3f;
+        }
+        button:disabled {
+            background-color: #ccc;
+            cursor: not-allowed;
+        }
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        input, select {
+            padding: 8px;
+            margin: 5px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            width: 200px;
+        }
+        .log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔗 Glasshouse Link Test Page</h1>
+        <p>This page helps test the Glasshouse Link functionality without needing to load a full 3D model.</p>
+
+        <div class="test-section">
+            <h3>📡 Connection Test</h3>
+            <p>Test the authentication and Pusher connection:</p>
+            <div>
+                <label>Email:</label>
+                <input type="email" id="testEmail" value="test@example.com" placeholder="Enter test email">
+            </div>
+            <div>
+                <label>Password:</label>
+                <input type="password" id="testPassword" value="testpass" placeholder="Enter test password">
+            </div>
+            <div>
+                <label>Server:</label>
+                <input type="text" id="testServer" value="app.glasshousebim.com" placeholder="Server address">
+            </div>
+            <div>
+                <label>API Key:</label>
+                <input type="text" id="testApiKey" value="" placeholder="Enter API key for direct testing">
+            </div>
+            <div>
+                <label>Channel:</label>
+                <input type="text" id="testChannel" value="test-channel-123" placeholder="Test channel name">
+            </div>
+            <button onclick="testConnection()">Test Full Connection</button>
+            <button onclick="testApiKeyConnection()">Test API Key Connection</button>
+            <button onclick="testConnectionEndpoint()">Test Connection Endpoint</button>
+            <button onclick="testDisconnection()">Test Disconnect</button>
+            <div id="connectionStatus" class="status" style="display: none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📨 Message Sending Test</h3>
+            <p>Send test messages to the connected channel:</p>
+            <div>
+                <label>GUIDs (comma-separated):</label>
+                <input type="text" id="testGuids" value="guid-12345-abcde,guid-67890-fghij,guid-11111-kkkkk" placeholder="Enter test GUIDs">
+            </div>
+            <button onclick="sendSelectMessage()">Send Select Message</button>
+            <button onclick="sendIsolateMessage()">Send Isolate Message</button>
+            <div id="messageStatus" class="status" style="display: none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🎯 Object Matching Test</h3>
+            <p>Test object matching with different parameters:</p>
+            <div>
+                <label>Parameter Type:</label>
+                <select id="parameterType">
+                    <option value="GlassHouseJournalGUID">GlassHouseJournalGUID</option>
+                    <option value="id">Object ID</option>
+                    <option value="type">Object Type</option>
+                    <option value="name">Object Name</option>
+                    <option value="UniqueIdPara">UniqueIdPara</option>
+                </select>
+            </div>
+            <div>
+                <label>Test Values:</label>
+                <input type="text" id="testValues" value="test-value-1,test-value-2" placeholder="Enter test values">
+            </div>
+            <button onclick="testObjectMatching()">Test Object Matching</button>
+            <div id="matchingStatus" class="status" style="display: none;"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>📋 Activity Log</h3>
+            <button onclick="clearLog()">Clear Log</button>
+            <div id="activityLog" class="log"></div>
+        </div>
+
+        <div class="test-section">
+            <h3>🔧 Quick Actions</h3>
+            <button onclick="openMainApp()">Open Main App</button>
+            <button onclick="runPusherTest()">Run Pusher Sender Test</button>
+            <button onclick="checkBrowserConsole()">Check Browser Console</button>
+        </div>
+    </div>
+
+    <script>
+        let glasshouseLinkTool = null;
+        let testPusher = null;
+        let testChannel = null;
+
+        function log(message, type = 'info') {
+            const logDiv = document.getElementById('activityLog');
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            logEntry.style.color = type === 'error' ? 'red' : type === 'success' ? 'green' : 'black';
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+            console.log(`[GlasshouseTest] ${message}`);
+        }
+
+        function showStatus(elementId, message, type) {
+            const statusDiv = document.getElementById(elementId);
+            statusDiv.textContent = message;
+            statusDiv.className = `status ${type}`;
+            statusDiv.style.display = 'block';
+            log(message, type);
+        }
+
+        async function testConnection() {
+            const email = document.getElementById('testEmail').value;
+            const password = document.getElementById('testPassword').value;
+            const server = document.getElementById('testServer').value;
+            const channel = document.getElementById('testChannel').value;
+
+            log('Starting full connection test...');
+
+            try {
+                // Test authentication
+                log('Step 1: Testing authentication...');
+                const response = await fetch('/api/glasshouse/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password, server })
+                });
+
+                const responseText = await response.text();
+                log(`Login response status: ${response.status}`);
+                log(`Login response: ${responseText}`);
+
+                if (!response.ok) {
+                    let errorMessage = 'Authentication failed';
+                    try {
+                        const errorData = JSON.parse(responseText);
+                        errorMessage = errorData.error || errorMessage;
+                        if (errorData.details) {
+                            log(`Error details: ${JSON.stringify(errorData.details, null, 2)}`);
+                        }
+                    } catch (e) {
+                        log(`Raw error response: ${responseText}`);
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const data = JSON.parse(responseText);
+                log(`Authentication successful! API Key: ${data.apiKey?.substring(0, 10)}...`);
+                showStatus('connectionStatus', 'Authentication successful!', 'success');
+
+                // Test user info endpoint
+                log('Step 2: Testing user info endpoint...');
+                await testUserInfo(data.apiKey, server);
+
+                // Test Pusher connection
+                log('Step 3: Testing Pusher connection...');
+                await testPusherConnection(channel);
+
+            } catch (error) {
+                log(`Connection test failed: ${error.message}`);
+                showStatus('connectionStatus', `Connection failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testApiKeyConnection() {
+            const apiKey = document.getElementById('testApiKey').value;
+            const server = document.getElementById('testServer').value;
+
+            if (!apiKey) {
+                showStatus('connectionStatus', 'Please enter an API key', 'error');
+                return;
+            }
+
+            log('Starting API key connection test...');
+
+            try {
+                // Test user info endpoint directly
+                log('Testing user info endpoint with API key...');
+                await testUserInfo(apiKey, server);
+                showStatus('connectionStatus', 'API key connection successful!', 'success');
+
+            } catch (error) {
+                log(`API key connection test failed: ${error.message}`);
+                showStatus('connectionStatus', `API key connection failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testUserInfo(apiKey, server) {
+            const userInfoResponse = await fetch(`/api/glasshouse/user-info?apiKey=${encodeURIComponent(apiKey)}&server=${encodeURIComponent(server)}`);
+
+            const userInfoText = await userInfoResponse.text();
+            log(`User info response status: ${userInfoResponse.status}`);
+            log(`User info response: ${userInfoText}`);
+
+            if (!userInfoResponse.ok) {
+                let errorMessage = 'User info request failed';
+                try {
+                    const errorData = JSON.parse(userInfoText);
+                    errorMessage = errorData.error || errorMessage;
+                    if (errorData.details) {
+                        log(`User info error details: ${JSON.stringify(errorData.details, null, 2)}`);
+                    }
+                } catch (e) {
+                    log(`Raw user info error response: ${userInfoText}`);
+                }
+                throw new Error(errorMessage);
+            }
+
+            const userInfoData = JSON.parse(userInfoText);
+            log(`User info retrieved successfully! Channel: ${userInfoData.channelName}`);
+
+            return userInfoData;
+        }
+
+        async function testConnectionEndpoint() {
+            const apiKey = document.getElementById('testApiKey').value;
+            const server = document.getElementById('testServer').value;
+
+            if (!apiKey) {
+                showStatus('connectionStatus', 'Please enter an API key', 'error');
+                return;
+            }
+
+            log('Testing connection endpoint...');
+
+            try {
+                const testResponse = await fetch(`/api/glasshouse/test-connection?apiKey=${encodeURIComponent(apiKey)}&server=${encodeURIComponent(server)}`);
+
+                const testText = await testResponse.text();
+                log(`Test connection response status: ${testResponse.status}`);
+                log(`Test connection response: ${testText}`);
+
+                if (!testResponse.ok) {
+                    let errorMessage = 'Connection test failed';
+                    try {
+                        const errorData = JSON.parse(testText);
+                        errorMessage = errorData.error || errorMessage;
+                        if (errorData.details) {
+                            log(`Test connection error details: ${JSON.stringify(errorData.details, null, 2)}`);
+                        }
+                    } catch (e) {
+                        log(`Raw test connection error response: ${testText}`);
+                    }
+                    throw new Error(errorMessage);
+                }
+
+                const testData = JSON.parse(testText);
+                log(`Connection test successful!`);
+                showStatus('connectionStatus', 'Connection endpoint test successful!', 'success');
+
+                return testData;
+
+            } catch (error) {
+                log(`Connection endpoint test failed: ${error.message}`);
+                showStatus('connectionStatus', `Connection endpoint test failed: ${error.message}`, 'error');
+            }
+        }
+
+        async function testPusherConnection(channelName) {
+            try {
+                // Get Pusher config
+                const configResponse = await fetch('/api/glasshouse/config');
+                const config = await configResponse.json();
+
+                // Load Pusher library if not already loaded
+                if (typeof Pusher === 'undefined') {
+                    await loadPusherLibrary();
+                }
+
+                // Initialize Pusher
+                testPusher = new Pusher(config.pusherKey, {
+                    cluster: config.pusherCluster
+                });
+
+                // Subscribe to test channel
+                testChannel = testPusher.subscribe(channelName);
+
+                testChannel.bind('SelectEntries', (data) => {
+                    log(`Received SelectEntries: ${JSON.stringify(data)}`, 'success');
+                });
+
+                testChannel.bind('IsolateEntries', (data) => {
+                    log(`Received IsolateEntries: ${JSON.stringify(data)}`, 'success');
+                });
+
+                log(`Connected to Pusher channel: ${channelName}`, 'success');
+
+            } catch (error) {
+                log(`Pusher connection failed: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        function loadPusherLibrary() {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = 'https://js.pusher.com/8.2.0/pusher.min.js';
+                script.onload = resolve;
+                script.onerror = reject;
+                document.head.appendChild(script);
+            });
+        }
+
+        function testDisconnection() {
+            if (testChannel) {
+                testChannel.unbind_all();
+                testPusher.unsubscribe(testChannel.name);
+            }
+            if (testPusher) {
+                testPusher.disconnect();
+            }
+            testPusher = null;
+            testChannel = null;
+            showStatus('connectionStatus', 'Disconnected from Pusher', 'info');
+        }
+
+        async function sendSelectMessage() {
+            const channel = document.getElementById('testChannel').value;
+            const guids = document.getElementById('testGuids').value.split(',').map(g => g.trim());
+
+            try {
+                const response = await fetch('/api/test/send-select', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ channel, guids })
+                });
+
+                if (response.ok) {
+                    showStatus('messageStatus', 'Select message sent successfully!', 'success');
+                } else {
+                    throw new Error('Failed to send message');
+                }
+            } catch (error) {
+                showStatus('messageStatus', `Failed to send select message: ${error.message}`, 'error');
+            }
+        }
+
+        async function sendIsolateMessage() {
+            const channel = document.getElementById('testChannel').value;
+            const guids = document.getElementById('testGuids').value.split(',').map(g => g.trim());
+
+            try {
+                const response = await fetch('/api/test/send-isolate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ channel, guids })
+                });
+
+                if (response.ok) {
+                    showStatus('messageStatus', 'Isolate message sent successfully!', 'success');
+                } else {
+                    throw new Error('Failed to send message');
+                }
+            } catch (error) {
+                showStatus('messageStatus', `Failed to send isolate message: ${error.message}`, 'error');
+            }
+        }
+
+        function testObjectMatching() {
+            const parameterType = document.getElementById('parameterType').value;
+            const values = document.getElementById('testValues').value.split(',').map(v => v.trim());
+
+            log(`Testing object matching with parameter: ${parameterType}, values: ${values.join(', ')}`);
+            
+            // This would normally test against actual 3D objects
+            // For now, just simulate the matching logic
+            showStatus('matchingStatus', `Object matching test completed for ${parameterType}`, 'info');
+        }
+
+        function clearLog() {
+            document.getElementById('activityLog').innerHTML = '';
+        }
+
+        function openMainApp() {
+            window.open('/', '_blank');
+        }
+
+        function runPusherTest() {
+            log('To run Pusher sender test, execute in terminal: node test-pusher-sender.js');
+            showStatus('messageStatus', 'Check terminal for Pusher sender test instructions', 'info');
+        }
+
+        function checkBrowserConsole() {
+            log('Check the browser console (F12) for detailed logs');
+            console.log('🔍 Glasshouse Link Test - Check this console for detailed logs');
+        }
+
+        // Initialize
+        log('Glasshouse Link Test Page loaded');
+        log('Ready to test connection and messaging functionality');
+    </script>
+</body>
+</html>
