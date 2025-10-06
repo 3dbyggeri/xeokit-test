@@ -628,9 +628,9 @@ app.post('/api/test/send-select', async (req, res) => {
         // Initialize Pusher for testing
         const Pusher = require('pusher');
         const pusher = new Pusher({
-            appId: process.env.PUSHER_APP_ID || '1906088',
-            key: process.env.PUSHER_KEY || '5e96c4cf2b1522a8f112',
-            secret: process.env.PUSHER_SECRET || 'b8b8b8b8b8b8b8b8b8b8',
+            appId: process.env.PUSHER_APP_ID || '191919', // dummy app id
+            key: process.env.PUSHER_KEY || '5e5e5e5e5e5e', // dummy key
+            secret: process.env.PUSHER_SECRET || 'b8b8b8b8b8b8b8b8b8b8', // dummy secret
             cluster: process.env.PUSHER_CLUSTER || 'eu',
             useTLS: true
         });

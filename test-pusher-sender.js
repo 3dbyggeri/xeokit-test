@@ -7,10 +7,10 @@ const Pusher = require('pusher');
 
 // Pusher configuration (same as in the Revit plugin)
 const pusher = new Pusher({
-    appId: '1228147',
-    key: '5e96c4cf2b1522a8f112',
-    secret: '38f73d5d7168a38e31e7',
-    cluster: 'eu',
+    appId: '1111111', // dummy app id
+    key: '58585858585858585858', // dummy key
+    secret: '38383838383838383838', // dummy secret
+    cluster: 'eu', // dummy cluster
     useTLS: true
 });
 
