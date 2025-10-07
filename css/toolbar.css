@@ -147,6 +147,113 @@ canvas.measure-mode {
     }
 }
 
+/* Glasshouse Link Button Styles */
+.xeokit-glasshouse-link {
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+/* Default state - original toolbar color */
+.xeokit-glasshouse-link:not(.connected) {
+    color: #ffffff;
+    background-color: #1d2453;
+}
+
+/* Connected state - blue background (always when connected) */
+.xeokit-glasshouse-link.connected {
+    color: #ffffff !important;
+    background-color: #007bff !important;
+}
+
+/* Remove hover effect - no background color change on hover */
+.xeokit-glasshouse-link:hover {
+    background-color: inherit;
+}
+
+/* Status dot indicator for Glasshouse Link */
+.xeokit-glasshouse-link .xeokit-glasshouse-counter {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid white;
+    display: block;
+    transition: all 0.3s ease;
+}
+
+/* Disconnected state - red dot */
+.xeokit-glasshouse-link:not(.connected) .xeokit-glasshouse-counter {
+    background-color: #dc3545;
+}
+
+/* Connected state - green dot */
+.xeokit-glasshouse-link.connected .xeokit-glasshouse-counter {
+    background-color: #28a745;
+}
+
+/* Active/receiving messages - blinking green dot */
+.xeokit-glasshouse-link.connected.active .xeokit-glasshouse-counter {
+    background-color: #28a745;
+    animation: status-dot-blink 1.5s infinite;
+}
+
+/* Blinking animation for status dot */
+@keyframes status-dot-blink {
+    0%, 50% {
+        background-color: #28a745;
+        box-shadow: 0 0 6px rgba(40, 167, 69, 0.8);
+        transform: scale(1);
+    }
+    25%, 75% {
+        background-color: #34ce57;
+        box-shadow: 0 0 10px rgba(40, 167, 69, 1);
+        transform: scale(1.1);
+    }
+}
+
+/* Glasshouse Import Button Styles */
+.xeokit-glasshouse-import {
+    position: relative;
+}
+
+.xeokit-glasshouse-import.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Glasshouse Project Dialog Styles */
+.xeokit-glasshouse-project-dialog {
+    width: 500px;
+    max-width: 90vw;
+}
+
+.xeokit-glasshouse-project-dialog .form-group {
+    margin-bottom: 1rem;
+}
+
+.xeokit-glasshouse-project-dialog label {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-weight: bold;
+    color: #333;
+}
+
+.xeokit-glasshouse-project-dialog .form-control {
+    width: 100%;
+    padding: 0.5rem;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+}
+
+.xeokit-glasshouse-project-dialog .form-control:disabled {
+    background-color: #f5f5f5;
+    cursor: not-allowed;
+}
+
+
 /* Glasshouse Login Dialog Styles */
 .glasshouse-login-dialog {
     position: fixed;
@@ -312,4 +419,148 @@ canvas.measure-mode {
     background-color: #f8d7da;
     color: #721c24;
     border: 1px solid #f5c6cb;
+}
+
+/* Modal Dialog Styles */
+.xeokit-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.xeokit-modal {
+    background-color: white;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    min-width: 400px;
+    max-width: 500px;
+    max-height: 80vh;
+    overflow: hidden;
+    position: relative;
+}
+
+.xeokit-modal-header {
+    padding: 20px 20px 15px 20px;
+    border-bottom: 1px solid #eee;
+    position: relative;
+}
+
+.xeokit-modal-header h3 {
+    margin: 0;
+    color: #333;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.xeokit-modal-close {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: #666;
+    padding: 0;
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background-color 0.2s;
+}
+
+.xeokit-modal-close:hover {
+    background-color: #f5f5f5;
+    color: #333;
+}
+
+.xeokit-modal-body {
+    padding: 20px;
+}
+
+.xeokit-modal-footer {
+    padding: 15px 20px 20px 20px;
+    border-top: 1px solid #eee;
+    text-align: right;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #555;
+    font-size: 14px;
+}
+
+.form-control {
+    width: 100%;
+    padding: 10px 12px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    font-size: 14px;
+    background-color: white;
+    transition: border-color 0.2s;
+    box-sizing: border-box;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: #007bff;
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.form-control:disabled {
+    background-color: #f8f9fa;
+    color: #6c757d;
+    cursor: not-allowed;
+}
+
+.xeokit-button {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: background-color 0.2s;
+    margin-left: 10px;
+}
+
+.xeokit-button-cancel {
+    background-color: #f8f9fa;
+    color: #6c757d;
+    border: 1px solid #dee2e6;
+}
+
+.xeokit-button-cancel:hover {
+    background-color: #e2e6ea;
+    border-color: #dae0e5;
+}
+
+.xeokit-button-primary {
+    background-color: #007bff;
+    color: white;
+}
+
+.xeokit-button-primary:hover:not(:disabled) {
+    background-color: #0056b3;
+}
+
+.xeokit-button-primary:disabled {
+    background-color: #6c757d;
+    cursor: not-allowed;
+    opacity: 0.6;
 }

@@ -13,6 +13,7 @@ import { MeasureDistanceTool } from "./MeasureDistanceTool.js";
 import { MeasureAngleTool } from "./MeasureAngleTool.js";
 import { SectionTool } from "./SectionTool.js";
 import { GlasshouseLinkTool } from "./GlasshouseLinkTool.js";
+import { GlasshouseImportTool } from "./GlasshouseImportTool.js";
 
 /**
  * Toolbar Manager - Coordinates all toolbar tools
@@ -130,12 +131,16 @@ class Toolbar extends Controller {
                             data-tippy-content="Section options" title="Section options"></button>
                 </div>
 
-                <!-- Glasshouse Link tool -->
+                <!-- Glasshouse tools -->
                 <div class="xeokit-btn-group" role="group">
                     <!-- Glasshouse Link button -->
                     <button type="button" class="xeokit-glasshouse-link xeokit-btn fa fa-link fa-2x"
                             data-tippy-content="Glasshouse Link - Click to connect" title="Glasshouse Link">
                         <span class="xeokit-glasshouse-counter">0</span>
+                    </button>
+                    <!-- Glasshouse Import button -->
+                    <button type="button" class="xeokit-glasshouse-import xeokit-btn fa fa-download fa-2x"
+                            data-tippy-content="Import from Glasshouse (requires connection)" title="Import from Glasshouse">
                     </button>
                 </div>
             </div>
@@ -271,6 +276,12 @@ class Toolbar extends Controller {
             counterElement: toolbarElement.querySelector(".xeokit-glasshouse-counter")
         });
 
+        // Glasshouse Import Tool
+        this.glasshouseImportTool = new GlasshouseImportTool(this, {
+            buttonElement: toolbarElement.querySelector(".xeokit-glasshouse-import"),
+            glasshouseLinkTool: this.glasshouseLinkTool
+        });
+
         // Set up mutual exclusion for all interaction tools (including section tool)
         this._mutexActivation([
             this.selectionTool,
@@ -311,8 +322,9 @@ class Toolbar extends Controller {
 
         // Level 5 tools
         this.sectionTool.setEnabled(true);
-        // Note: Glasshouse Link tool is always enabled (like toggle explorer)
+        // Note: Glasshouse tools are always enabled (like toggle explorer)
         this.glasshouseLinkTool.setEnabled(true);
+        this.glasshouseImportTool.setEnabled(true);
     }
 
     /**

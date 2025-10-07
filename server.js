@@ -675,6 +675,157 @@ app.post('/api/test/send-isolate', async (req, res) => {
     }
 });
 
+// Get projects endpoint
+app.get('/api/glasshouse/projects', async (req, res) => {
+    try {
+        const apiKey = req.headers['access-token'];
+
+        if (!apiKey) {
+            return res.status(401).json({ error: 'API key required' });
+        }
+
+        console.log('Getting projects with API key:', apiKey.substring(0, 10) + '...');
+
+        const response = await axios.get('https://app.glasshousebim.com/api/v1/projects.json', {
+            headers: {
+                'access-token': apiKey,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log('Projects response status:', response.status);
+
+        res.json({
+            success: true,
+            projects: response.data.projects || []
+        });
+
+    } catch (error) {
+        console.error('Error getting projects:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            error: error.response?.data?.error || error.message
+        });
+    }
+});
+
+// Get models for a project endpoint
+app.get('/api/glasshouse/projects/:projectId/models', async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const apiKey = req.headers['access-token'];
+
+        if (!apiKey) {
+            return res.status(401).json({ error: 'API key required' });
+        }
+
+        console.log(`Getting models for project ${projectId} with API key:`, apiKey.substring(0, 10) + '...');
+
+        const response = await axios.get(`https://app.glasshousebim.com/api/v1/projects/${projectId}/model_containers.json`, {
+            headers: {
+                'access-token': apiKey,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log('Models response status:', response.status);
+
+        res.json({
+            success: true,
+            models: response.data.model_containers || []
+        });
+
+    } catch (error) {
+        console.error('Error getting models:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            error: error.response?.data?.error || error.message
+        });
+    }
+});
+
+// Import project changes endpoint
+app.post('/api/glasshouse/import/project-changes', async (req, res) => {
+    try {
+        const { projectId, modelId } = req.body;
+        const apiKey = req.headers['access-token'];
+
+        if (!apiKey) {
+            return res.status(401).json({ error: 'API key required' });
+        }
+
+        if (!projectId) {
+            return res.status(400).json({ error: 'Project ID required' });
+        }
+
+        console.log(`Getting project changes for project ${projectId}, model ${modelId}`);
+
+        // Call GetProjectChanges API (equivalent to fromObjectLinks = false)
+        const response = await axios.get(`https://app.glasshousebim.com/api/v1/projects/${projectId}/changes.json`, {
+            headers: {
+                'access-token': apiKey,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log('Project changes response status:', response.status);
+
+        res.json({
+            success: true,
+            xmlContent: response.data
+        });
+
+    } catch (error) {
+        console.error('Error getting project changes:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            error: error.response?.data?.error || error.message
+        });
+    }
+});
+
+// Import BIM objects endpoint
+app.post('/api/glasshouse/import/bim-objects', async (req, res) => {
+    try {
+        const { projectId, modelId } = req.body;
+        const apiKey = req.headers['access-token'];
+
+        if (!apiKey) {
+            return res.status(401).json({ error: 'API key required' });
+        }
+
+        if (!projectId) {
+            return res.status(400).json({ error: 'Project ID required' });
+        }
+
+        console.log(`Getting BIM objects for project ${projectId}, model ${modelId}`);
+
+        // Call GetBimObjectLinks API (equivalent to fromObjectLinks = true)
+        let url = `https://app.glasshousebim.com/api/v1/projects/${projectId}/bim_object_links.json`;
+        if (modelId) {
+            url += `?model_id=${modelId}`;
+        }
+
+        const response = await axios.get(url, {
+            headers: {
+                'access-token': apiKey,
+                'Content-Type': 'application/json'
+            },
+            timeout: 28000 // 28 second timeout as per Revit plugin
+        });
+
+        console.log('BIM objects response status:', response.status);
+
+        res.json({
+            success: true,
+            xmlContent: response.data
+        });
+
+    } catch (error) {
+        console.error('Error getting BIM objects:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            error: error.response?.data?.error || error.message
+        });
+    }
+});
+
 // Serve test page for Glasshouse Link
 app.get('/test-glasshouse', (req, res) => {
     res.sendFile(path.join(__dirname, 'test-glasshouse-link.html'));

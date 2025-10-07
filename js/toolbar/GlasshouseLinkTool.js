@@ -32,7 +32,8 @@ export class GlasshouseLinkTool extends Controller {
         
         this._initEvents();
         this._loadPusherConfig();
-        
+        this._updateStatusDot(); // Initialize status dot
+
         console.log("GlasshouseLinkTool initialized");
     }
 
@@ -54,17 +55,17 @@ export class GlasshouseLinkTool extends Controller {
         // Update button appearance based on connection state
         this.on("connected", (connected) => {
             if (connected) {
-                this._buttonElement.classList.add("active", "connected");
+                this._buttonElement.classList.add("connected");
                 this._buttonElement.setAttribute('data-tippy-content', 'Glasshouse Link - Connected (click to disconnect)');
                 this._buttonElement.setAttribute('title', 'Glasshouse Link - Connected');
                 console.log("GlasshouseLinkTool: Connected to Glasshouse");
             } else {
-                this._buttonElement.classList.remove("active", "connected");
+                this._buttonElement.classList.remove("connected", "active");
                 this._buttonElement.setAttribute('data-tippy-content', 'Glasshouse Link - Click to connect');
                 this._buttonElement.setAttribute('title', 'Glasshouse Link');
                 console.log("GlasshouseLinkTool: Disconnected from Glasshouse");
             }
-            this._updateCounter();
+            this._updateStatusDot();
         });
 
         // Update button appearance based on enabled state
@@ -270,7 +271,10 @@ export class GlasshouseLinkTool extends Controller {
 
     _handleSelectEntries(data) {
         console.log('Received SelectEntries event:', data);
-        
+
+        // Show activity indicator
+        this._showMessageActivity();
+
         try {
             const guids = this._extractGuids(data);
             if (guids.length > 0) {
@@ -283,7 +287,10 @@ export class GlasshouseLinkTool extends Controller {
 
     _handleIsolateEntries(data) {
         console.log('Received IsolateEntries event:', data);
-        
+
+        // Show activity indicator
+        this._showMessageActivity();
+
         try {
             const guids = this._extractGuids(data);
             if (guids.length > 0) {
@@ -448,19 +455,26 @@ export class GlasshouseLinkTool extends Controller {
         this.fire("connected", false);
     }
 
-    _updateCounter() {
+    _updateStatusDot() {
         if (this._counterElement) {
-            const count = this._connected ? 1 : 0;
-            this._counterElement.innerText = count.toString();
-            this._counterElement.setAttribute('data-count', count.toString());
+            // Always show the status dot
+            this._counterElement.style.display = 'block';
+            this._counterElement.innerText = ''; // Remove any text content
 
-            if (count > 0) {
-                this._counterElement.classList.add('visible');
-                this._counterElement.style.display = 'flex';
-            } else {
-                this._counterElement.classList.remove('visible');
-                this._counterElement.style.display = 'none';
-            }
+            // The CSS will handle the color based on connected/active classes
+            console.log(`Status dot updated - Connected: ${this._connected}, Active: ${this._buttonElement.classList.contains('active')}`);
+        }
+    }
+
+    // Method to temporarily show active state when receiving messages
+    _showMessageActivity() {
+        if (this._connected) {
+            this._buttonElement.classList.add('active');
+
+            // Remove active class after animation duration
+            setTimeout(() => {
+                this._buttonElement.classList.remove('active');
+            }, 3000); // 3 seconds of blinking
         }
     }
 
