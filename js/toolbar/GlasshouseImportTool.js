@@ -366,23 +366,36 @@ export class GlasshouseImportTool extends Controller {
 
     async _getXMLContent(fromObjectLinks = false) {
         const endpoint = fromObjectLinks ? 'bim-objects' : 'project-changes';
-        
+
+        // Prepare request body with endpoint-specific parameters
+        let requestBody = {
+            projectId: this._selectedProject.id,
+            modelId: this._selectedModel.id
+        };
+
+        if (fromObjectLinks) {
+            // For GetBimObjectLinks - add exclude option
+            requestBody.excludeEntriesWithoutObjects = false; // Set to true to exclude entries without objects
+        } else {
+            // For GetProjectChanges - add optional date filters
+            // Uncomment and modify these dates as needed:
+            // requestBody.dateTimeFrom = '2024-01-01 00:00:00';
+            // requestBody.dateTimeTo = '2024-12-31 23:59:59';
+        }
+
         const response = await fetch(`/api/glasshouse/import/${endpoint}`, {
             method: 'POST',
             headers: {
                 'access-token': this._glasshouseLinkTool._apiKey,
                 'Content-Type': 'application/json'
             },
-            body: JSON.stringify({
-                projectId: this._selectedProject.id,
-                modelId: this._selectedModel.id
-            })
+            body: JSON.stringify(requestBody)
         });
-        
+
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         const data = await response.json();
         return data.xmlContent;
     }

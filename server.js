@@ -758,8 +758,26 @@ app.post('/api/glasshouse/import/project-changes', async (req, res) => {
 
         console.log(`Getting project changes for project ${projectId}, model ${modelId}`);
 
-        // Call GetProjectChanges API (equivalent to fromObjectLinks = false)
-        const response = await axios.get(`https://app.glasshousebim.com/api/v1/projects/${projectId}/changes.json`, {
+        // Build URL exactly like the Revit plugin GetProjectChanges method
+        const { dateTimeFrom, dateTimeTo } = req.body;
+        let strRelativePath = `/audit_log/bim_object_changes/${projectId}`;
+
+        if (dateTimeFrom) {
+            const fromQuery = `from=${dateTimeFrom} UTC`;
+            let toQuery;
+            if (dateTimeTo) {
+                toQuery = `to=${dateTimeTo} UTC`;
+            } else {
+                const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+                toQuery = `to=${now} UTC`;
+            }
+            strRelativePath = `/audit_log/bim_object_changes/${projectId}?${fromQuery}&${toQuery}`;
+        }
+
+        const url = `https://app.glasshousebim.com/api/v1${strRelativePath}`;
+        console.log('GetProjectChanges URL:', url);
+
+        const response = await axios.get(url, {
             headers: {
                 'access-token': apiKey,
                 'Content-Type': 'application/json'
@@ -795,13 +813,20 @@ app.post('/api/glasshouse/import/bim-objects', async (req, res) => {
             return res.status(400).json({ error: 'Project ID required' });
         }
 
+        if (!modelId) {
+            return res.status(400).json({ error: 'Project ID required' });
+        }
+
         console.log(`Getting BIM objects for project ${projectId}, model ${modelId}`);
 
-        // Call GetBimObjectLinks API (equivalent to fromObjectLinks = true)
-        let url = `https://app.glasshousebim.com/api/v1/projects/${projectId}/bim_object_links.json`;
-        if (modelId) {
-            url += `?model_id=${modelId}`;
-        }
+        // Build URL exactly like the Revit plugin GetBimObjectLinks method
+        const { excludeEntriesWithoutObjects } = req.body;
+        const modelcontaining = modelId || "";
+        const exclude = excludeEntriesWithoutObjects ? "true" : "false";
+
+        const strRelativePath = `/projects/${projectId}/new_journal/entries/connected_bimobjects?model-containing=${modelcontaining}&exclude_entries_without_objects=${exclude}`;
+        const url = `https://app.glasshousebim.com/api/v1${strRelativePath}`;
+        console.log('GetBimObjectLinks URL:', url);
 
         const response = await axios.get(url, {
             headers: {
