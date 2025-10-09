@@ -103,8 +103,11 @@ export class ContextMenu {
                 const separator = document.createElement('li');
                 separator.className = 'separator';
                 separator.style.borderTop = '1px solid #555';
-                separator.style.margin = '4px 0';
+                separator.style.margin = '0';
                 separator.style.height = '1px';
+                separator.style.padding = '0';
+                separator.style.cursor = 'default';
+                separator.style.pointerEvents = 'none';
                 ul.appendChild(separator);
             }
 
@@ -186,8 +189,11 @@ export class ContextMenu {
                 const separator = document.createElement('li');
                 separator.className = 'separator';
                 separator.style.borderTop = '1px solid #555';
-                separator.style.margin = '4px 0';
+                separator.style.margin = '0';
                 separator.style.height = '1px';
+                separator.style.padding = '0';
+                separator.style.cursor = 'default';
+                separator.style.pointerEvents = 'none';
                 ul.appendChild(separator);
             }
 
