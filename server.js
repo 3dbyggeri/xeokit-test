@@ -697,7 +697,7 @@ app.get('/api/glasshouse/projects', async (req, res) => {
 
         res.json({
             success: true,
-            projects: response.data.projects || []
+            projects: (response.data.projects || []).concat(response.data.invited_projects || [])
         });
 
     } catch (error) {

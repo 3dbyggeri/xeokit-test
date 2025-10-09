@@ -87,8 +87,8 @@ export class GlasshouseImportTool extends Controller {
         const menuItems = [
             { action: 'set-project', title: 'Set Project & Model' },
             { separator: true },
-            { action: 'import-changes', title: 'Import Project Changes' },
-            { action: 'import-objects', title: 'Import BIM Objects' }
+            //{ action: 'import-changes', title: 'Import Project Changes' },
+            { action: 'import-objects', title: 'Sync Entry Links with Glasshouse' }
         ];
 
         menuItems.forEach((item, index) => {

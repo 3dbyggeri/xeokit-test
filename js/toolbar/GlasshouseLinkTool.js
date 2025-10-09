@@ -306,12 +306,11 @@ export class GlasshouseLinkTool extends Controller {
         // This should match the format used in the Revit plugin
         const guids = [];
         
-        if (data && data.data) {
+        if (data && data.entry_guids) {
             try {
-                const eventData = typeof data.data === 'string' ? JSON.parse(data.data) : data.data;
-                if (eventData.guids && Array.isArray(eventData.guids)) {
-                    guids.push(...eventData.guids);
-                }
+                    if (data.entry_guids && Array.isArray(data.entry_guids)) {
+                        guids.push(...data.entry_guids);
+                    }
             } catch (error) {
                 console.error('Error parsing event data:', error);
             }
