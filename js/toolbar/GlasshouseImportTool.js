@@ -379,14 +379,26 @@ export class GlasshouseImportTool extends Controller {
             alert('Please select a project and model first');
             return;
         }
-        
+
+        const progressDialog = this._showProgressDialog('Importing Project Changes');
+
         try {
+            this._updateProgress(progressDialog, 30, 'Retrieving project changes from Glasshouse...');
             console.log('Importing project changes...');
             const xmlContent = await this._getXMLContent(false); // fromObjectLinks = false
             console.log('Project changes XML content:', xmlContent);
-            alert('Project changes imported successfully! Check console for XML content.');
+
+            this._updateProgress(progressDialog, 100, 'Import completed successfully!');
+
+            // Close progress dialog after a short delay
+            setTimeout(() => {
+                this._hideProgressDialog(progressDialog);
+                alert('Project changes imported successfully! Check console for XML content.');
+            }, 1000);
+
         } catch (error) {
             console.error('Error importing project changes:', error);
+            this._hideProgressDialog(progressDialog);
             alert('Failed to import project changes: ' + error.message);
         }
     }
@@ -397,17 +409,31 @@ export class GlasshouseImportTool extends Controller {
             return;
         }
 
+        const progressDialog = this._showProgressDialog('Importing BIM Objects');
+
         try {
+            // Step 1: Retrieve XML content
+            this._updateProgress(progressDialog, 20, 'Retrieving data from Glasshouse...');
             console.log('Importing BIM objects...');
             const xmlContent = await this._getXMLContent(true); // fromObjectLinks = true
             console.log('BIM objects XML content:', xmlContent);
 
-            // Parse XML and apply to properties
+            // Step 2: Parse XML and apply to properties
+            this._updateProgress(progressDialog, 60, 'Parsing XML content...');
             const importedCount = this._parseAndApplyXMLContent(xmlContent);
 
-            alert(`BIM objects imported successfully! ${importedCount} objects updated with GlashouseJournalGUID.`);
+            // Step 3: Complete
+            this._updateProgress(progressDialog, 100, 'Import completed successfully!');
+
+            // Close progress dialog after a short delay
+            setTimeout(() => {
+                this._hideProgressDialog(progressDialog);
+                alert(`BIM objects imported successfully! ${importedCount} objects updated with GlashouseJournalGUID.`);
+            }, 1000);
+
         } catch (error) {
             console.error('Error importing BIM objects:', error);
+            this._hideProgressDialog(progressDialog);
             alert('Failed to import BIM objects: ' + error.message);
         }
     }
@@ -577,7 +603,44 @@ export class GlasshouseImportTool extends Controller {
         console.log(`Set property '${propertyName}' directly = '${propertyValue}'`);
     }
 
+    _showProgressDialog(title) {
+        const progressDialog = document.createElement('div');
+        progressDialog.className = 'xeokit-import-progress';
+        progressDialog.innerHTML = `
+            <h4>${title}</h4>
+            <div class="xeokit-import-progress-bar">
+                <div class="xeokit-import-progress-fill"></div>
+            </div>
+            <div class="xeokit-import-progress-text">
+                <span class="xeokit-import-spinner"></span>
+                <span class="progress-message">Initializing...</span>
+            </div>
+        `;
 
+        document.body.appendChild(progressDialog);
+        return progressDialog;
+    }
+
+    _updateProgress(progressDialog, percentage, message) {
+        if (!progressDialog) return;
+
+        const progressFill = progressDialog.querySelector('.xeokit-import-progress-fill');
+        const progressMessage = progressDialog.querySelector('.progress-message');
+
+        if (progressFill) {
+            progressFill.style.width = `${percentage}%`;
+        }
+
+        if (progressMessage) {
+            progressMessage.textContent = message;
+        }
+    }
+
+    _hideProgressDialog(progressDialog) {
+        if (progressDialog && progressDialog.parentNode) {
+            progressDialog.parentNode.removeChild(progressDialog);
+        }
+    }
 
     destroy() {
         super.destroy();
