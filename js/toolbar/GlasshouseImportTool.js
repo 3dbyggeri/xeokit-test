@@ -420,7 +420,7 @@ export class GlasshouseImportTool extends Controller {
 
             // Step 2: Parse XML and apply to properties
             this._updateProgress(progressDialog, 60, 'Parsing XML content...');
-            const importedCount = this._parseAndApplyXMLContent(xmlContent);
+            const importedCount = this._parseAndApplyXMLContent(xmlContent, progressDialog);
 
             // Step 3: Complete
             this._updateProgress(progressDialog, 100, 'Import completed successfully!');
@@ -474,7 +474,7 @@ export class GlasshouseImportTool extends Controller {
         return data.xmlContent;
     }
 
-    _parseAndApplyXMLContent(xmlContent) {
+    _parseAndApplyXMLContent(xmlContent, progressDialog = null) {
         try {
             console.log('Parsing XML content...');
 
@@ -493,6 +493,15 @@ export class GlasshouseImportTool extends Controller {
             console.log(`Found ${journalEntries.length} journal entries`);
 
             let updatedCount = 0;
+            let totalElements = 0;
+
+            // First pass: count total elements for progress calculation
+            journalEntries.forEach(entry => {
+                const elements = entry.querySelectorAll('element');
+                totalElements += elements.length;
+            });
+
+            let processedElements = 0;
 
             // Process each journal entry
             journalEntries.forEach(entry => {
@@ -512,6 +521,15 @@ export class GlasshouseImportTool extends Controller {
                         if (applied) {
                             updatedCount++;
                         }
+                    }
+
+                    processedElements++;
+
+                    // Update progress (60% to 95% range for processing)
+                    if (progressDialog && totalElements > 0) {
+                        const progressPercent = 60 + (processedElements / totalElements) * 35;
+                        this._updateProgress(progressDialog, progressPercent,
+                            `Processing elements... ${processedElements}/${totalElements} (${updatedCount} updated)`);
                     }
                 });
             });

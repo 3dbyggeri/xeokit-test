@@ -29,6 +29,13 @@ canvas {
     right: 280px; /* Position to the left of the metadata panel */
     z-index: 200000;
     pointer-events: all;
+    opacity: 0.7;
+    transition: opacity 0.3s ease;
+}
+
+/* Make navigation cube more visible on hover */
+#myNavCubeCanvas:hover {
+    opacity: 1.0;
 }
 
 /* Loading indicator */
