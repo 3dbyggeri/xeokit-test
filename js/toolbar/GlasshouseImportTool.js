@@ -501,7 +501,7 @@ export class GlasshouseImportTool extends Controller {
             // Close progress dialog after a short delay
             setTimeout(() => {
                 this._hideProgressDialog(progressDialog);
-                alert(`BIM objects imported successfully! ${importedCount} objects updated with GlashouseJournalGUID.`);
+                alert(`BIM objects imported successfully! ${importedCount} objects updated with GlasHouseJournalGUID.`);
             }, 1000);
 
         } catch (error) {
@@ -589,8 +589,8 @@ export class GlasshouseImportTool extends Controller {
                 elements.forEach(element => {
                     const elementId = element.getAttribute('id');
                     if (elementId) {
-                        // Apply the GlashouseJournalGUID to objects with matching UniqueIdPara
-                        const applied = this._applyGlashouseJournalGUID(elementId, glassHouseJournalGUID);
+                        // Apply the GlasHouseJournalGUID to objects with matching UniqueIdPara
+                        const applied = this._applyGlasHouseJournalGUID(elementId, glassHouseJournalGUID);
                         if (applied) {
                             updatedCount++;
                         }
@@ -607,7 +607,7 @@ export class GlasshouseImportTool extends Controller {
                 });
             });
 
-            console.log(`Successfully updated ${updatedCount} objects with GlashouseJournalGUID`);
+            console.log(`Successfully updated ${updatedCount} objects with GlasHouseJournalGUID`);
             return updatedCount;
 
         } catch (error) {
@@ -616,7 +616,7 @@ export class GlasshouseImportTool extends Controller {
         }
     }
 
-    _applyGlashouseJournalGUID(elementId, glassHouseJournalGUID) {
+    _applyGlasHouseJournalGUID(elementId, glassHouseJournalGUID) {
         try {
             // Simplified approach: directly search window.modelProperties for matching UniqueIdPara
             if (!window.modelProperties) {
@@ -631,15 +631,15 @@ export class GlasshouseImportTool extends Controller {
                 const uniqueIdPara = this._getPropertyValue(props, 'UniqueIdPara');
 
                 if (uniqueIdPara === elementId) {
-                    // Found matching element, apply GlashouseJournalGUID
-                    this._setPropertyValue(props, 'GlashouseJournalGUID', glassHouseJournalGUID);
+                    // Found matching element, apply GlasHouseJournalGUID
+                    this._setPropertyValue(props, 'GlasHouseJournalGUID', glassHouseJournalGUID);
                     appliedCount++;
-                    console.log(`Applied GlashouseJournalGUID ${glassHouseJournalGUID} to element ${elementKey} with UniqueIdPara ${elementId}`);
+                    console.log(`Applied GlasHouseJournalGUID ${glassHouseJournalGUID} to element ${elementKey} with UniqueIdPara ${elementId}`);
                 }
             }
 
             if (appliedCount > 0) {
-                console.log(`Successfully applied GlashouseJournalGUID to ${appliedCount} elements with UniqueIdPara: ${elementId}`);
+                console.log(`Successfully applied GlasHouseJournalGUID to ${appliedCount} elements with UniqueIdPara: ${elementId}`);
                 return true;
             } else {
                 console.warn(`No elements found with UniqueIdPara: ${elementId}`);
@@ -647,7 +647,7 @@ export class GlasshouseImportTool extends Controller {
             }
 
         } catch (error) {
-            console.error('Error applying GlashouseJournalGUID:', error);
+            console.error('Error applying GlasHouseJournalGUID:', error);
             return false;
         }
     }

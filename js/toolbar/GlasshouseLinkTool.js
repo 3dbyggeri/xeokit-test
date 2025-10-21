@@ -369,7 +369,12 @@ export class GlasshouseLinkTool extends Controller {
             switch (this._parameterName) {
                 case 'GlassHouseJournalGUID':
                     // handle GlassHouseJournalGUID vs GlasHouseJournalGUID
-                    objectValue = this._getMetadataProperty(object, "GlasHouseJournalGUID");
+                    objectValue = this._getMetadataProperty(object, "GlassHouseJournalGUID");
+                    if (!objectValue)
+                    {
+                        objectValue = this._getMetadataProperty(object, "GlasHouseJournalGUID");
+                    }
+
                     break;
                 case 'id':
                     objectValue = object.id;
