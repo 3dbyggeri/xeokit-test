@@ -18,7 +18,10 @@ export class GlasshouseImportTool extends Controller {
         // Import state
         this._selectedProject = null;
         this._selectedModel = null;
-        this._importType = 'changes'; // 'changes' or 'objects'
+
+        // Load global selection on initialization
+        this._loadGlobalSelection();
+        this._importType = 'objects'; // 'changes' or 'objects'
         
         this._initEvents();
         this._updateButtonState();
@@ -50,15 +53,99 @@ export class GlasshouseImportTool extends Controller {
 
     _updateButtonState() {
         const connected = this._glasshouseLinkTool && this._glasshouseLinkTool._connected;
-        
+
         if (connected) {
             this._buttonElement.classList.remove('disabled');
-            this._buttonElement.setAttribute('data-tippy-content', 'Import from Glasshouse');
-            this._buttonElement.setAttribute('title', 'Import from Glasshouse');
         } else {
             this._buttonElement.classList.add('disabled');
-            this._buttonElement.setAttribute('data-tippy-content', 'Import from Glasshouse (requires connection)');
-            this._buttonElement.setAttribute('title', 'Import from Glasshouse (requires connection)');
+        }
+
+        // Update tooltip based on selected project/model
+        this._updateTooltip();
+    }
+
+    _updateTooltip() {
+        let tooltip = 'Import from Glasshouse';
+
+        if (this._selectedProject && this._selectedModel) {
+            tooltip = `Import from: ${this._selectedProject.name} / ${this._selectedModel.name}`;
+        } else if (this._selectedProject) {
+            tooltip = `Import from: ${this._selectedProject.name}`;
+        }
+
+        const connected = this._glasshouseLinkTool && this._glasshouseLinkTool._connected;
+        if (!connected) {
+            tooltip += ' (requires connection)';
+        }
+
+        this._buttonElement.setAttribute('data-tippy-content', tooltip);
+        this._buttonElement.setAttribute('title', tooltip);
+    }
+
+    async _loadGlobalSelection() {
+        try {
+            const response = await fetch('/api/glasshouse/global-selection');
+            const data = await response.json();
+
+            if (data.success && data.selection) {
+                const selection = data.selection;
+
+                // Only load if we have valid selection data
+                if (selection.projectId && selection.projectName && selection.modelId && selection.modelName) {
+                    this._selectedProject = {
+                        id: selection.projectId,
+                        name: selection.projectName
+                    };
+                    this._selectedModel = {
+                        id: selection.modelId,
+                        name: selection.modelName
+                    };
+
+                    console.log('Loaded global selection:', this._selectedProject, this._selectedModel);
+                    this._updateTooltip();
+
+                    // Update button state since we now have a selection
+                    this._updateButtonState();
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to load global selection:', error);
+            // Don't throw error - just continue without global selection
+        }
+    }
+
+    async _saveGlobalSelection() {
+        try {
+            if (!this._selectedProject || !this._selectedModel) {
+                console.warn('Cannot save global selection: missing project or model');
+                return;
+            }
+
+            const requestBody = {
+                projectId: this._selectedProject.id,
+                projectName: this._selectedProject.name,
+                modelId: this._selectedModel.id,
+                modelName: this._selectedModel.name
+            };
+
+            const response = await fetch('/api/glasshouse/global-selection', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                console.log('Global selection saved successfully');
+            } else {
+                console.error('Failed to save global selection:', data.error);
+            }
+
+        } catch (error) {
+            console.error('Error saving global selection:', error);
         }
     }
 
@@ -84,11 +171,13 @@ export class GlasshouseImportTool extends Controller {
         ul.style.padding = '0';
 
         // Menu items data
+        const hasProjectAndModel = this._selectedProject && this._selectedModel;
+        const projectMenuTitle = hasProjectAndModel ? 'Change Project & Model' : 'Set Project & Model';
         const menuItems = [
-            { action: 'set-project', title: 'Set Project & Model' },
+            { action: 'set-project', title: projectMenuTitle },
             { separator: true },
-            { action: 'import-changes', title: 'Import Project Changes' },
-            { action: 'import-objects', title: 'Import BIM Objects' }
+            //{ action: 'import-changes', title: 'Import Project Changes', disabled: !hasProjectAndModel },
+            { action: 'import-objects', title: 'Sync Entry Links with Glasshouse', disabled: !hasProjectAndModel }
         ];
 
         menuItems.forEach((item, index) => {
@@ -105,26 +194,35 @@ export class GlasshouseImportTool extends Controller {
             } else {
                 li.textContent = item.title;
                 li.style.padding = '8px 16px';
-                li.style.cursor = 'pointer';
-                li.style.color = '#ecf0f1';
                 li.style.fontSize = '13px';
                 li.style.borderBottom = index < menuItems.length - 1 && !menuItems[index + 1].separator ? '1px solid #34495e' : 'none';
 
-                // Hover effects
-                li.addEventListener('mouseenter', () => {
-                    li.style.backgroundColor = '#3498db';
-                });
+                if (item.disabled) {
+                    // Disabled state
+                    li.style.cursor = 'not-allowed';
+                    li.style.color = '#6c757d';
+                    li.style.opacity = '0.5';
+                } else {
+                    // Enabled state
+                    li.style.cursor = 'pointer';
+                    li.style.color = '#ecf0f1';
 
-                li.addEventListener('mouseleave', () => {
-                    li.style.backgroundColor = 'transparent';
-                });
+                    // Hover effects
+                    li.addEventListener('mouseenter', () => {
+                        li.style.backgroundColor = '#3498db';
+                    });
 
-                // Click handler
-                li.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this._handleMenuAction(item.action);
-                    this._hideMenu(menu);
-                });
+                    li.addEventListener('mouseleave', () => {
+                        li.style.backgroundColor = 'transparent';
+                    });
+
+                    // Click handler
+                    li.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        this._handleMenuAction(item.action);
+                        this._hideMenu(menu);
+                    });
+                }
             }
 
             ul.appendChild(li);
@@ -275,6 +373,12 @@ export class GlasshouseImportTool extends Controller {
                         ${models.map(m => `<option value="${m.id}">${m.name}</option>`).join('')}
                     `;
                     modelSelect.disabled = false;
+
+                    // Auto-select current model if one is already selected and matches this project
+                    if (this._selectedModel && this._selectedProject && this._selectedProject.id === projectId) {
+                        modelSelect.value = this._selectedModel.id;
+                        this._updateSelectButton();
+                    }
                 } catch (error) {
                     console.error('Error loading models:', error);
                     modelSelect.innerHTML = '<option value="">Error loading models</option>';
@@ -317,7 +421,13 @@ export class GlasshouseImportTool extends Controller {
             
             console.log('Selected project:', this._selectedProject);
             console.log('Selected model:', this._selectedModel);
-            
+
+            // Update tooltip to reflect selection
+            this._updateTooltip();
+
+            // Save global selection to server
+            this._saveGlobalSelection();
+
             alert(`Selected: ${selectedProject.name} - ${selectedModelName}`);
             document.body.removeChild(modal);
         });
@@ -328,6 +438,13 @@ export class GlasshouseImportTool extends Controller {
                 document.body.removeChild(modal);
             }
         });
+
+        // Auto-select current project if one is already selected (after event listeners are attached)
+        if (this._selectedProject) {
+            projectSelect.value = this._selectedProject.id;
+            // Trigger change event to load models
+            projectSelect.dispatchEvent(new Event('change'));
+        }
     }
 
     async _importProjectChanges() {
@@ -335,14 +452,26 @@ export class GlasshouseImportTool extends Controller {
             alert('Please select a project and model first');
             return;
         }
-        
+
+        const progressDialog = this._showProgressDialog('Importing Project Changes');
+
         try {
+            this._updateProgress(progressDialog, 30, 'Retrieving project changes from Glasshouse...');
             console.log('Importing project changes...');
             const xmlContent = await this._getXMLContent(false); // fromObjectLinks = false
             console.log('Project changes XML content:', xmlContent);
-            alert('Project changes imported successfully! Check console for XML content.');
+
+            this._updateProgress(progressDialog, 100, 'Import completed successfully!');
+
+            // Close progress dialog after a short delay
+            setTimeout(() => {
+                this._hideProgressDialog(progressDialog);
+                alert('Project changes imported successfully! Check console for XML content.');
+            }, 1000);
+
         } catch (error) {
             console.error('Error importing project changes:', error);
+            this._hideProgressDialog(progressDialog);
             alert('Failed to import project changes: ' + error.message);
         }
     }
@@ -352,14 +481,32 @@ export class GlasshouseImportTool extends Controller {
             alert('Please select a project and model first');
             return;
         }
-        
+
+        const progressDialog = this._showProgressDialog('Importing BIM Objects');
+
         try {
+            // Step 1: Retrieve XML content
+            this._updateProgress(progressDialog, 20, 'Retrieving data from Glasshouse...');
             console.log('Importing BIM objects...');
             const xmlContent = await this._getXMLContent(true); // fromObjectLinks = true
             console.log('BIM objects XML content:', xmlContent);
-            alert('BIM objects imported successfully! Check console for XML content.');
+
+            // Step 2: Parse XML and apply to properties
+            this._updateProgress(progressDialog, 60, 'Parsing XML content...');
+            const importedCount = this._parseAndApplyXMLContent(xmlContent, progressDialog);
+
+            // Step 3: Complete
+            this._updateProgress(progressDialog, 100, 'Import completed successfully!');
+
+            // Close progress dialog after a short delay
+            setTimeout(() => {
+                this._hideProgressDialog(progressDialog);
+                alert(`BIM objects imported successfully! ${importedCount} objects updated with GlasHouseJournalGUID.`);
+            }, 1000);
+
         } catch (error) {
             console.error('Error importing BIM objects:', error);
+            this._hideProgressDialog(progressDialog);
             alert('Failed to import BIM objects: ' + error.message);
         }
     }
@@ -398,6 +545,192 @@ export class GlasshouseImportTool extends Controller {
 
         const data = await response.json();
         return data.xmlContent;
+    }
+
+    _parseAndApplyXMLContent(xmlContent, progressDialog = null) {
+        try {
+            console.log('Parsing XML content...');
+
+            // Parse XML string
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlContent, 'text/xml');
+
+            // Check for parsing errors
+            const parseError = xmlDoc.querySelector('parsererror');
+            if (parseError) {
+                throw new Error('XML parsing failed: ' + parseError.textContent);
+            }
+
+            // Extract journal entries
+            const journalEntries = xmlDoc.querySelectorAll('JournalEntry');
+            console.log(`Found ${journalEntries.length} journal entries`);
+
+            let updatedCount = 0;
+            let totalElements = 0;
+
+            // First pass: count total elements for progress calculation
+            journalEntries.forEach(entry => {
+                const elements = entry.querySelectorAll('element');
+                totalElements += elements.length;
+            });
+
+            let processedElements = 0;
+
+            // Process each journal entry
+            journalEntries.forEach(entry => {
+                const glassHouseJournalGUID = entry.getAttribute('GlashouseJournalGUID');
+                if (!glassHouseJournalGUID) {
+                    console.warn('Journal entry missing GlashouseJournalGUID');
+                    return;
+                }
+
+                // Get all element IDs for this journal entry
+                const elements = entry.querySelectorAll('element');
+                elements.forEach(element => {
+                    const elementId = element.getAttribute('id');
+                    if (elementId) {
+                        // Apply the GlasHouseJournalGUID to objects with matching UniqueIdPara
+                        const applied = this._applyGlasHouseJournalGUID(elementId, glassHouseJournalGUID);
+                        if (applied) {
+                            updatedCount++;
+                        }
+                    }
+
+                    processedElements++;
+
+                    // Update progress (60% to 95% range for processing)
+                    if (progressDialog && totalElements > 0) {
+                        const progressPercent = 60 + (processedElements / totalElements) * 35;
+                        this._updateProgress(progressDialog, progressPercent,
+                            `Processing elements... ${processedElements}/${totalElements} (${updatedCount} updated)`);
+                    }
+                });
+            });
+
+            console.log(`Successfully updated ${updatedCount} objects with GlasHouseJournalGUID`);
+            return updatedCount;
+
+        } catch (error) {
+            console.error('Error parsing XML content:', error);
+            throw error;
+        }
+    }
+
+    _applyGlasHouseJournalGUID(elementId, glassHouseJournalGUID) {
+        try {
+            // Simplified approach: directly search window.modelProperties for matching UniqueIdPara
+            if (!window.modelProperties) {
+                console.warn('No model properties loaded');
+                return false;
+            }
+
+            let appliedCount = 0;
+
+            // Iterate through all elements in modelProperties to find matching UniqueIdPara
+            for (const [elementKey, props] of Object.entries(window.modelProperties)) {
+                const uniqueIdPara = this._getPropertyValue(props, 'UniqueIdPara');
+
+                if (uniqueIdPara === elementId) {
+                    // Found matching element, apply GlasHouseJournalGUID
+                    this._setPropertyValue(props, 'GlasHouseJournalGUID', glassHouseJournalGUID);
+                    appliedCount++;
+                    console.log(`Applied GlasHouseJournalGUID ${glassHouseJournalGUID} to element ${elementKey} with UniqueIdPara ${elementId}`);
+                }
+            }
+
+            if (appliedCount > 0) {
+                console.log(`Successfully applied GlasHouseJournalGUID to ${appliedCount} elements with UniqueIdPara: ${elementId}`);
+                return true;
+            } else {
+                console.warn(`No elements found with UniqueIdPara: ${elementId}`);
+                return false;
+            }
+
+        } catch (error) {
+            console.error('Error applying GlasHouseJournalGUID:', error);
+            return false;
+        }
+    }
+
+    _getPropertyValue(props, propertyName) {
+        // First try direct property name match
+        if (props[propertyName] !== undefined) {
+            return props[propertyName];
+        }
+
+        // If not found, try to find by legend name (reverse lookup) - same as GlasshouseLinkTool
+        if (window.modelLegend) {
+            for (const [key, legendInfo] of Object.entries(window.modelLegend)) {
+                if (legendInfo.Name === propertyName && props[key] !== undefined) {
+                    //console.log(`Found property '${propertyName}' via legend key '${key}' = '${props[key]}'`);
+                    return props[key];
+                }
+            }
+        }
+
+        return null;
+    }
+
+    _setPropertyValue(props, propertyName, propertyValue) {
+        // First try to find existing property by name
+        if (props[propertyName] !== undefined) {
+            props[propertyName] = propertyValue;
+            return;
+        }
+
+        // If not found, try to find by legend name and set via legend key
+        if (window.modelLegend) {
+            for (const [key, legendInfo] of Object.entries(window.modelLegend)) {
+                if (legendInfo.Name === propertyName) {
+                    props[key] = propertyValue;
+                    console.log(`Set property '${propertyName}' via legend key '${key}' = '${propertyValue}'`);
+                    return;
+                }
+            }
+        }
+
+        // If no legend mapping found, set directly by name
+        props[propertyName] = propertyValue;
+        console.log(`Set property '${propertyName}' directly = '${propertyValue}'`);
+    }
+
+    _showProgressDialog(title) {
+        const progressDialog = document.createElement('div');
+        progressDialog.className = 'xeokit-import-progress';
+        progressDialog.innerHTML = `
+            <h4>${title}</h4>
+            <div class="xeokit-import-progress-bar">
+                <div class="xeokit-import-progress-fill"></div>
+            </div>
+            <div class="xeokit-import-progress-text">
+                <span class="xeokit-import-spinner"></span>
+                <span class="progress-message">Initializing...</span>
+            </div>
+        `;
+
+        document.body.appendChild(progressDialog);
+        return progressDialog;
+    }
+
+    _updateProgress(progressDialog, percentage, message) {
+        if (!progressDialog) return;
+
+        const progressFill = progressDialog.querySelector('.xeokit-import-progress-fill');
+        const progressMessage = progressDialog.querySelector('.progress-message');
+
+        if (progressFill) {
+            progressFill.style.width = `${percentage}%`;
+        }
+
+        if (progressMessage) {
+            progressMessage.textContent = message;
+        }
+    }
+
+    _hideProgressDialog(progressDialog) {
+        if (progressDialog && progressDialog.parentNode) {
+            progressDialog.parentNode.removeChild(progressDialog);
+        }
     }
 
     destroy() {

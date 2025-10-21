@@ -12,6 +12,18 @@ const mongoose = require('mongoose');
 const app = express();
 const PORT = process.env.PORT || 8080;
 
+// In-memory storage for imported properties from Glasshouse
+const importedProperties = new Map(); // Key: modelName, Value: Map of objectId -> properties
+
+// In-memory storage for global project/model selection (persists across sessions)
+let globalProjectModelSelection = {
+    projectId: null,
+    projectName: null,
+    modelId: null,
+    modelName: null,
+    lastUpdated: null
+};
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -697,7 +709,7 @@ app.get('/api/glasshouse/projects', async (req, res) => {
 
         res.json({
             success: true,
-            projects: response.data.projects || []
+            projects: (response.data.projects || []).concat(response.data.invited_projects || [])
         });
 
     } catch (error) {
@@ -848,6 +860,110 @@ app.post('/api/glasshouse/import/bim-objects', async (req, res) => {
         res.status(error.response?.status || 500).json({
             error: error.response?.data?.error || error.message
         });
+    }
+});
+
+// API endpoint to store imported properties
+app.post('/api/glasshouse/imported-properties/:modelName', (req, res) => {
+    try {
+        const { modelName } = req.params;
+        const { properties } = req.body;
+
+        if (!properties || typeof properties !== 'object') {
+            return res.status(400).json({ error: 'Properties object required' });
+        }
+
+        // Store the imported properties for this model
+        importedProperties.set(modelName, new Map(Object.entries(properties)));
+
+        console.log(`Stored imported properties for model ${modelName}:`, Object.keys(properties).length, 'objects');
+
+        res.json({
+            success: true,
+            message: `Imported properties stored for model ${modelName}`,
+            objectCount: Object.keys(properties).length
+        });
+
+    } catch (error) {
+        console.error('Error storing imported properties:', error);
+        res.status(500).json({ error: 'Failed to store imported properties' });
+    }
+});
+
+// API endpoint to get imported properties
+app.get('/api/glasshouse/imported-properties/:modelName', (req, res) => {
+    try {
+        const { modelName } = req.params;
+
+        const modelProperties = importedProperties.get(modelName);
+        if (!modelProperties) {
+            return res.json({
+                success: true,
+                properties: {},
+                message: `No imported properties found for model ${modelName}`
+            });
+        }
+
+        // Convert Map back to object
+        const properties = Object.fromEntries(modelProperties);
+
+        res.json({
+            success: true,
+            properties: properties,
+            objectCount: Object.keys(properties).length
+        });
+
+    } catch (error) {
+        console.error('Error getting imported properties:', error);
+        res.status(500).json({ error: 'Failed to get imported properties' });
+    }
+});
+
+// API endpoint to get global project/model selection
+app.get('/api/glasshouse/global-selection', (req, res) => {
+    try {
+        res.json({
+            success: true,
+            selection: globalProjectModelSelection
+        });
+    } catch (error) {
+        console.error('Error getting global selection:', error);
+        res.status(500).json({ error: 'Failed to get global selection' });
+    }
+});
+
+// API endpoint to set global project/model selection
+app.post('/api/glasshouse/global-selection', (req, res) => {
+    try {
+        const { projectId, projectName, modelId, modelName } = req.body;
+
+        // Validate required fields
+        if (!projectId || !projectName || !modelId || !modelName) {
+            return res.status(400).json({
+                error: 'Missing required fields: projectId, projectName, modelId, modelName'
+            });
+        }
+
+        // Update global selection
+        globalProjectModelSelection = {
+            projectId,
+            projectName,
+            modelId,
+            modelName,
+            lastUpdated: new Date().toISOString()
+        };
+
+        console.log('Updated global project/model selection:', globalProjectModelSelection);
+
+        res.json({
+            success: true,
+            message: 'Global selection updated successfully',
+            selection: globalProjectModelSelection
+        });
+
+    } catch (error) {
+        console.error('Error setting global selection:', error);
+        res.status(500).json({ error: 'Failed to set global selection' });
     }
 });
 
