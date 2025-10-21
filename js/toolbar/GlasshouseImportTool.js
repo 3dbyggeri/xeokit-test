@@ -18,7 +18,7 @@ export class GlasshouseImportTool extends Controller {
         // Import state
         this._selectedProject = null;
         this._selectedModel = null;
-        this._importType = 'changes'; // 'changes' or 'objects'
+        this._importType = 'objects'; // 'changes' or 'objects'
         
         this._initEvents();
         this._updateButtonState();
@@ -106,7 +106,7 @@ export class GlasshouseImportTool extends Controller {
         const menuItems = [
             { action: 'set-project', title: projectMenuTitle },
             { separator: true },
-            { action: 'import-changes', title: 'Import Project Changes', disabled: !hasProjectAndModel },
+            //{ action: 'import-changes', title: 'Import Project Changes', disabled: !hasProjectAndModel },
             { action: 'import-objects', title: 'Sync Entry Links with Glasshouse', disabled: !hasProjectAndModel }
         ];
 
@@ -589,7 +589,7 @@ export class GlasshouseImportTool extends Controller {
         if (window.modelLegend) {
             for (const [key, legendInfo] of Object.entries(window.modelLegend)) {
                 if (legendInfo.Name === propertyName && props[key] !== undefined) {
-                    console.log(`Found property '${propertyName}' via legend key '${key}' = '${props[key]}'`);
+                    //console.log(`Found property '${propertyName}' via legend key '${key}' = '${props[key]}'`);
                     return props[key];
                 }
             }
