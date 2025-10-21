@@ -368,9 +368,8 @@ export class GlasshouseLinkTool extends Controller {
 
             switch (this._parameterName) {
                 case 'GlassHouseJournalGUID':
-                case 'UniqueIdPara':
-                    // Look in object metadata for this parameter
-                    objectValue = this._getMetadataProperty(object, this._parameterName);
+                    // handle GlassHouseJournalGUID vs GlasHouseJournalGUID
+                    objectValue = this._getMetadataProperty(object, "GlasHouseJournalGUID");
                     break;
                 case 'id':
                     objectValue = object.id;
@@ -416,7 +415,7 @@ export class GlasshouseLinkTool extends Controller {
 
         // First try direct property name match
         if (props[propertyName] !== undefined) {
-            console.log(`Found property '${propertyName}' = '${props[propertyName]}' for element ${elementId}`);
+            //console.log(`Found property '${propertyName}' = '${props[propertyName]}' for element ${elementId}`);
             return props[propertyName];
         }
 
@@ -424,7 +423,7 @@ export class GlasshouseLinkTool extends Controller {
         if (window.modelLegend) {
             for (const [key, legendInfo] of Object.entries(window.modelLegend)) {
                 if (legendInfo.Name === propertyName && props[key] !== undefined) {
-                    console.log(`Found property '${propertyName}' via legend key '${key}' = '${props[key]}' for element ${elementId}`);
+                    //console.log(`Found property '${propertyName}' via legend key '${key}' = '${props[key]}' for element ${elementId}`);
                     return props[key];
                 }
             }

@@ -18,6 +18,9 @@ export class GlasshouseImportTool extends Controller {
         // Import state
         this._selectedProject = null;
         this._selectedModel = null;
+
+        // Load global selection on initialization
+        this._loadGlobalSelection();
         this._importType = 'objects'; // 'changes' or 'objects'
         
         this._initEvents();
@@ -77,6 +80,73 @@ export class GlasshouseImportTool extends Controller {
 
         this._buttonElement.setAttribute('data-tippy-content', tooltip);
         this._buttonElement.setAttribute('title', tooltip);
+    }
+
+    async _loadGlobalSelection() {
+        try {
+            const response = await fetch('/api/glasshouse/global-selection');
+            const data = await response.json();
+
+            if (data.success && data.selection) {
+                const selection = data.selection;
+
+                // Only load if we have valid selection data
+                if (selection.projectId && selection.projectName && selection.modelId && selection.modelName) {
+                    this._selectedProject = {
+                        id: selection.projectId,
+                        name: selection.projectName
+                    };
+                    this._selectedModel = {
+                        id: selection.modelId,
+                        name: selection.modelName
+                    };
+
+                    console.log('Loaded global selection:', this._selectedProject, this._selectedModel);
+                    this._updateTooltip();
+
+                    // Update button state since we now have a selection
+                    this._updateButtonState();
+                }
+            }
+        } catch (error) {
+            console.warn('Failed to load global selection:', error);
+            // Don't throw error - just continue without global selection
+        }
+    }
+
+    async _saveGlobalSelection() {
+        try {
+            if (!this._selectedProject || !this._selectedModel) {
+                console.warn('Cannot save global selection: missing project or model');
+                return;
+            }
+
+            const requestBody = {
+                projectId: this._selectedProject.id,
+                projectName: this._selectedProject.name,
+                modelId: this._selectedModel.id,
+                modelName: this._selectedModel.name
+            };
+
+            const response = await fetch('/api/glasshouse/global-selection', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(requestBody)
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                console.log('Global selection saved successfully');
+            } else {
+                console.error('Failed to save global selection:', data.error);
+            }
+
+        } catch (error) {
+            console.error('Error saving global selection:', error);
+        }
     }
 
     _showImportOptions() {
@@ -354,6 +424,9 @@ export class GlasshouseImportTool extends Controller {
 
             // Update tooltip to reflect selection
             this._updateTooltip();
+
+            // Save global selection to server
+            this._saveGlobalSelection();
 
             alert(`Selected: ${selectedProject.name} - ${selectedModelName}`);
             document.body.removeChild(modal);
