@@ -250,12 +250,19 @@ export class GlasshouseLinkTool extends Controller {
         // Bind to events
         this._channel.bind('SelectEntries', (data) => {
             this._handleSelectEntries(data);
-        });
+        });        
 
         this._channel.bind('IsolateEntries', (data) => {
             this._handleIsolateEntries(data);
-        });
+        });        
 
+        this._channel.bind('IsolateObjects', (data) => {
+            this._handleIsolateObjects(data);
+        });
+        
+        this._channel.bind('SelectObjects', (data) => {
+            this._handleSelectObjects(data);
+        });
         console.log(`Subscribed to Pusher channel: ${this._channelName}`);
     }
 
@@ -280,6 +287,9 @@ export class GlasshouseLinkTool extends Controller {
             if (guids.length > 0) {
                 this._selectObjectsByParameter(guids);
             }
+            else {
+                console.warn('No objects found to select');
+            }
         } catch (error) {
             console.error('Error handling SelectEntries:', error);
         }
@@ -296,10 +306,70 @@ export class GlasshouseLinkTool extends Controller {
             if (guids.length > 0) {
                 this._isolateObjectsByParameter(guids);
             }
+            else {
+                console.warn('No objects found to isolate');
+            }
         } catch (error) {
             console.error('Error handling IsolateEntries:', error);
         }
     }
+
+    _handleSelectObjects(data) {
+        console.log('Received SelectObjects event:', data);
+
+        // Show activity indicator
+        this._showMessageActivity();
+
+        try {
+            const guids = this._extracObjectGuids(data);
+            if (guids.length > 0) {
+                this._selectObjectsByParameter(guids);
+            }
+            else {
+                console.warn('No objects found to select');
+            }
+        } catch (error) {
+            console.error('Error handling SelectEntries:', error);
+        }
+    }
+
+    _handleIsolateObjects(data) {
+        console.log('Received IsolateObjects event:', data);
+
+        // Show activity indicator
+        this._showMessageActivity();
+
+        try {
+            const guids = this._extracObjectGuids(data);
+            if (guids.length > 0) {
+                this._isolateObjectsByParameter(guids);
+            }
+            else {
+                console.warn('No objects found to isolate');
+            }
+        } catch (error) {
+            console.error('Error handling IsolateObjects:', error);
+        }
+    }
+
+    _extracObjectGuids(data) {
+        // Extract GUIDs from the Pusher event data
+        // This should match the format used in the Revit plugin
+        const guids = [];
+        
+        if (data && data.object_guids) {
+            try {
+                    if (data.object_guids && Array.isArray(data.object_guids)) {
+                        guids.push(...data.object_guids);
+                    }
+            } catch (error) {
+                console.error('Error parsing event data:', error);
+            }
+        }
+        
+        return guids;
+    }
+
 
     _extractGuids(data) {
         // Extract GUIDs from the Pusher event data
