@@ -114,16 +114,7 @@ export class GlasshouseLinkTool extends Controller {
                                 <label for="glasshouse-server">Server:</label>
                                 <input type="text" id="glasshouse-server" value="app.glasshousebim.com" placeholder="app.glasshousebim.com">
                             </div>
-                            <div class="glasshouse-form-group">
-                                <label for="glasshouse-parameter">Match Parameter:</label>
-                                <select id="glasshouse-parameter">
-                                    <option value="GlassHouseJournalGUID">GlassHouseJournalGUID</option>
-                                    <option value="id">Object ID</option>
-                                    <option value="type">Object Type</option>
-                                    <option value="name">Object Name</option>
-                                    <option value="UniqueIdPara">UniqueIdPara</option>
-                                </select>
-                            </div>
+
                             <div class="glasshouse-form-actions">
                                 <button type="button" class="glasshouse-btn-cancel">Cancel</button>
                                 <button type="submit" class="glasshouse-btn-connect">Connect</button>
@@ -156,9 +147,6 @@ export class GlasshouseLinkTool extends Controller {
             const email = dialog.querySelector('#glasshouse-email').value;
             const password = dialog.querySelector('#glasshouse-password').value;
             const server = dialog.querySelector('#glasshouse-server').value;
-            const parameter = dialog.querySelector('#glasshouse-parameter').value;
-
-            this._parameterName = parameter;
             
             statusDiv.style.display = 'block';
             statusDiv.innerHTML = 'Connecting...';
@@ -285,7 +273,11 @@ export class GlasshouseLinkTool extends Controller {
         try {
             const guids = this._extractGuids(data);
             if (guids.length > 0) {
+                // Set parameter name to GlassHouseJournalGUID for entries
+                const originalParameterName = this._parameterName;
+                this._parameterName = 'GlassHouseJournalGUID';
                 this._selectObjectsByParameter(guids);
+                this._parameterName = originalParameterName; // Restore original
             }
             else {
                 console.warn('No objects found to select');
@@ -304,7 +296,11 @@ export class GlasshouseLinkTool extends Controller {
         try {
             const guids = this._extractGuids(data);
             if (guids.length > 0) {
+                // Set parameter name to GlassHouseJournalGUID for entries
+                const originalParameterName = this._parameterName;
+                this._parameterName = 'GlassHouseJournalGUID';
                 this._isolateObjectsByParameter(guids);
+                this._parameterName = originalParameterName; // Restore original
             }
             else {
                 console.warn('No objects found to isolate');
@@ -323,7 +319,11 @@ export class GlasshouseLinkTool extends Controller {
         try {
             const guids = this._extracObjectGuids(data);
             if (guids.length > 0) {
+                // Set parameter name to UniqueIdPara for objects
+                const originalParameterName = this._parameterName;
+                this._parameterName = 'UniqueIdPara';
                 this._selectObjectsByParameter(guids);
+                this._parameterName = originalParameterName; // Restore original
             }
             else {
                 console.warn('No objects found to select');
@@ -342,7 +342,11 @@ export class GlasshouseLinkTool extends Controller {
         try {
             const guids = this._extracObjectGuids(data);
             if (guids.length > 0) {
+                // Set parameter name to UniqueIdPara for objects
+                const originalParameterName = this._parameterName;
+                this._parameterName = 'UniqueIdPara';
                 this._isolateObjectsByParameter(guids);
+                this._parameterName = originalParameterName; // Restore original
             }
             else {
                 console.warn('No objects found to isolate');
