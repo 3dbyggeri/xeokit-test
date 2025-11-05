@@ -114,16 +114,7 @@ export class GlasshouseLinkTool extends Controller {
                                 <label for="glasshouse-server">Server:</label>
                                 <input type="text" id="glasshouse-server" value="app.glasshousebim.com" placeholder="app.glasshousebim.com">
                             </div>
-                            <div class="glasshouse-form-group">
-                                <label for="glasshouse-parameter">Match Parameter:</label>
-                                <select id="glasshouse-parameter">
-                                    <option value="GlassHouseJournalGUID">GlassHouseJournalGUID</option>
-                                    <option value="id">Object ID</option>
-                                    <option value="type">Object Type</option>
-                                    <option value="name">Object Name</option>
-                                    <option value="UniqueIdPara">UniqueIdPara</option>
-                                </select>
-                            </div>
+
                             <div class="glasshouse-form-actions">
                                 <button type="button" class="glasshouse-btn-cancel">Cancel</button>
                                 <button type="submit" class="glasshouse-btn-connect">Connect</button>
@@ -156,9 +147,6 @@ export class GlasshouseLinkTool extends Controller {
             const email = dialog.querySelector('#glasshouse-email').value;
             const password = dialog.querySelector('#glasshouse-password').value;
             const server = dialog.querySelector('#glasshouse-server').value;
-            const parameter = dialog.querySelector('#glasshouse-parameter').value;
-
-            this._parameterName = parameter;
             
             statusDiv.style.display = 'block';
             statusDiv.innerHTML = 'Connecting...';
@@ -250,12 +238,19 @@ export class GlasshouseLinkTool extends Controller {
         // Bind to events
         this._channel.bind('SelectEntries', (data) => {
             this._handleSelectEntries(data);
-        });
+        });        
 
         this._channel.bind('IsolateEntries', (data) => {
             this._handleIsolateEntries(data);
-        });
+        });        
 
+        this._channel.bind('IsolateObjects', (data) => {
+            this._handleIsolateObjects(data);
+        });
+        
+        this._channel.bind('SelectObjects', (data) => {
+            this._handleSelectObjects(data);
+        });
         console.log(`Subscribed to Pusher channel: ${this._channelName}`);
     }
 
@@ -278,7 +273,14 @@ export class GlasshouseLinkTool extends Controller {
         try {
             const guids = this._extractGuids(data);
             if (guids.length > 0) {
+                // Set parameter name to GlassHouseJournalGUID for entries
+                const originalParameterName = this._parameterName;
+                this._parameterName = 'GlassHouseJournalGUID';
                 this._selectObjectsByParameter(guids);
+                this._parameterName = originalParameterName; // Restore original
+            }
+            else {
+                console.warn('No objects found to select');
             }
         } catch (error) {
             console.error('Error handling SelectEntries:', error);
@@ -294,12 +296,84 @@ export class GlasshouseLinkTool extends Controller {
         try {
             const guids = this._extractGuids(data);
             if (guids.length > 0) {
+                // Set parameter name to GlassHouseJournalGUID for entries
+                const originalParameterName = this._parameterName;
+                this._parameterName = 'GlassHouseJournalGUID';
                 this._isolateObjectsByParameter(guids);
+                this._parameterName = originalParameterName; // Restore original
+            }
+            else {
+                console.warn('No objects found to isolate');
             }
         } catch (error) {
             console.error('Error handling IsolateEntries:', error);
         }
     }
+
+    _handleSelectObjects(data) {
+        console.log('Received SelectObjects event:', data);
+
+        // Show activity indicator
+        this._showMessageActivity();
+
+        try {
+            const guids = this._extracObjectGuids(data);
+            if (guids.length > 0) {
+                // Set parameter name to UniqueIdPara for objects
+                const originalParameterName = this._parameterName;
+                this._parameterName = 'UniqueIdPara';
+                this._selectObjectsByParameter(guids);
+                this._parameterName = originalParameterName; // Restore original
+            }
+            else {
+                console.warn('No objects found to select');
+            }
+        } catch (error) {
+            console.error('Error handling SelectEntries:', error);
+        }
+    }
+
+    _handleIsolateObjects(data) {
+        console.log('Received IsolateObjects event:', data);
+
+        // Show activity indicator
+        this._showMessageActivity();
+
+        try {
+            const guids = this._extracObjectGuids(data);
+            if (guids.length > 0) {
+                // Set parameter name to UniqueIdPara for objects
+                const originalParameterName = this._parameterName;
+                this._parameterName = 'UniqueIdPara';
+                this._isolateObjectsByParameter(guids);
+                this._parameterName = originalParameterName; // Restore original
+            }
+            else {
+                console.warn('No objects found to isolate');
+            }
+        } catch (error) {
+            console.error('Error handling IsolateObjects:', error);
+        }
+    }
+
+    _extracObjectGuids(data) {
+        // Extract GUIDs from the Pusher event data
+        // This should match the format used in the Revit plugin
+        const guids = [];
+        
+        if (data && data.object_guids) {
+            try {
+                    if (data.object_guids && Array.isArray(data.object_guids)) {
+                        guids.push(...data.object_guids);
+                    }
+            } catch (error) {
+                console.error('Error parsing event data:', error);
+            }
+        }
+        
+        return guids;
+    }
+
 
     _extractGuids(data) {
         // Extract GUIDs from the Pusher event data
