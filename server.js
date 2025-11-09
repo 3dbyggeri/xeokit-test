@@ -56,7 +56,10 @@ console.log('process.env.SCALINGO_MONGO_URL:', JSON.stringify(process.env.SCALIN
 if (MONGODB_URI) {
     mongoose.connect(MONGODB_URI, {
         useNewUrlParser: true,
-        useUnifiedTopology: true
+        useUnifiedTopology: true,
+        serverSelectionTimeoutMS: 10000, // 10 second timeout
+        socketTimeoutMS: 45000, // 45 second socket timeout
+        maxPoolSize: 10 // Limit connection pool
     })
     .then(() => console.log('MongoDB connected'))
     .catch(err => console.warn('MongoDB connection error:', err.message));
@@ -397,32 +400,252 @@ app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
 const ModelDataSchema = new mongoose.Schema({}, { strict: false });
 const ModelData = mongoose.model('ModelData', ModelDataSchema, 'modeldata'); // Replace with your actual collection name
 
-// Endpoint to fetch properties and legend for a given model name
+// Diagnostic endpoint to list all model names in the collection
+app.get('/api/modeldata/diagnostic/list-models', async (req, res) => {
+    try {
+        console.log('Listing all models in the collection...');
+
+        // Check MongoDB connection
+        if (mongoose.connection.readyState !== 1) {
+            return res.status(500).json({
+                error: 'MongoDB not connected',
+                connectionState: mongoose.connection.readyState
+            });
+        }
+
+        // Get all documents and extract model names with timeout
+        const docs = await ModelData.find({}, {
+            "ProjectInfo.Main.ProjectInfor.ModelName": 1,
+            "ProjectInfo.Main.ProjectInfor.ModelGuid": 1,
+            "_id": 1
+        }).limit(100).maxTimeMS(10000); // 10 second timeout
+
+        const modelList = docs.map(doc => ({
+            _id: doc._id,
+            modelName: doc.ProjectInfo?.Main?.ProjectInfor?.ModelName || 'N/A',
+            modelGuid: doc.ProjectInfo?.Main?.ProjectInfor?.ModelGuid || 'N/A',
+            hasProjectInfo: !!doc.ProjectInfo,
+            hasMain: !!doc.ProjectInfo?.Main,
+            hasProjectInfor: !!doc.ProjectInfo?.Main?.ProjectInfor
+        }));
+
+        console.log(`Found ${modelList.length} models`);
+
+        res.json({
+            success: true,
+            totalCount: docs.length,
+            models: modelList,
+            connectionState: mongoose.connection.readyState
+        });
+    } catch (err) {
+        console.error('Error listing models:', err);
+        res.status(500).json({
+            error: 'Failed to list models',
+            message: err.message,
+            name: err.name
+        });
+    }
+});
+
+// Diagnostic endpoint to search for a specific model name with flexible queries
+app.get('/api/modeldata/diagnostic/search/:modelName', async (req, res) => {
+    try {
+        const modelName = req.params.modelName;
+        console.log(`Searching for model: ${modelName}`);
+
+        // Try multiple query patterns to find the document
+        const queries = [
+            { "ProjectInfo.Main.ProjectInfor.ModelName": modelName },
+            { "ProjectInfo.Main.ProjectInfor.ModelName": { $regex: modelName, $options: 'i' } },
+            { "ProjectInfo.Main.ProjectInfor.ModelName": { $regex: modelName.replace(/\./g, '\\.'), $options: 'i' } },
+        ];
+
+        const results = [];
+
+        for (let i = 0; i < queries.length; i++) {
+            const query = queries[i];
+            console.log(`Trying query ${i + 1}:`, JSON.stringify(query));
+
+            const docs = await ModelData.find(query).limit(5);
+            results.push({
+                queryIndex: i + 1,
+                query: query,
+                matchCount: docs.length,
+                matches: docs.map(doc => ({
+                    _id: doc._id,
+                    modelName: doc.ProjectInfo?.Main?.ProjectInfor?.ModelName,
+                    modelGuid: doc.ProjectInfo?.Main?.ProjectInfor?.ModelGuid,
+                    hasProperties: !!doc.Properties,
+                    hasLegend: !!doc.Legend,
+                    hasTreeView: !!doc.TreeView
+                }))
+            });
+        }
+
+        res.json({
+            success: true,
+            searchTerm: modelName,
+            results: results
+        });
+    } catch (err) {
+        console.error('Error searching for model:', err);
+        res.status(500).json({
+            error: 'Failed to search for model',
+            message: err.message
+        });
+    }
+});
+
+// Enhanced endpoint to fetch properties and legend for a given model name
 app.get('/api/modeldata/properties/:modelName', async (req, res) => {
     try {
         const modelName = req.params.modelName;
-        const doc = await ModelData.findOne({
+        console.log(`Fetching properties for model: ${modelName}`);
+
+        // Try exact match first
+        let doc = await ModelData.findOne({
             "ProjectInfo.Main.ProjectInfor.ModelName": modelName
         });
-        
+
+        // If not found, try case-insensitive search
         if (!doc) {
-            return res.status(404).json({ 
-                error: 'Model data not found',
-                message: `No model found with name: ${modelName}`
+            console.log(`Exact match failed, trying case-insensitive search for: ${modelName}`);
+            doc = await ModelData.findOne({
+                "ProjectInfo.Main.ProjectInfor.ModelName": { $regex: `^${modelName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' }
             });
         }
-        
-        res.json({ 
-            properties: doc.Properties, 
+
+        // If still not found, try partial match
+        if (!doc) {
+            console.log(`Case-insensitive failed, trying partial match for: ${modelName}`);
+            doc = await ModelData.findOne({
+                "ProjectInfo.Main.ProjectInfor.ModelName": { $regex: modelName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
+            });
+        }
+
+        if (!doc) {
+            console.log(`No document found for model name: ${modelName}`);
+            return res.status(404).json({
+                error: 'Model data not found',
+                message: `No model found with name: ${modelName}`,
+                searchedFor: modelName
+            });
+        }
+
+        console.log(`Found document with ID: ${doc._id} for model: ${doc.ProjectInfo?.Main?.ProjectInfor?.ModelName}`);
+
+        res.json({
+            properties: doc.Properties,
             legend: doc.Legend,
             treeView: doc.TreeView,
-            modelId: doc._id // Include the model ID in response for reference
+            modelId: doc._id,
+            actualModelName: doc.ProjectInfo?.Main?.ProjectInfor?.ModelName
         });
     } catch (err) {
         console.error('Error fetching model properties:', err);
-        res.status(500).json({ 
+        res.status(500).json({
             error: 'Failed to fetch model properties',
-            message: err.message 
+            message: err.message
+        });
+    }
+});
+
+// Test endpoint to manually upload sample model data for testing
+app.post('/api/modeldata/diagnostic/upload-test-data', async (req, res) => {
+    try {
+        const { modelName, modelGuid } = req.body;
+
+        if (!modelName) {
+            return res.status(400).json({ error: 'modelName is required' });
+        }
+
+        const testDoc = {
+            ProjectInfo: {
+                Main: {
+                    ProjectInfor: {
+                        ProjectId: "test-project-id",
+                        ProjectInfoUniqueId: "test-unique-id",
+                        ProjectExportedTime: new Date().toISOString(),
+                        ExportedBy: "Test\\User",
+                        DocumentPath: `C:\\TestPath\\${modelName}`,
+                        ModelName: modelName,
+                        ModelGuid: modelGuid || `test-guid-${Date.now()}`,
+                        BuildingName: "Test Building",
+                        Author: "Test Author",
+                        Address: "Test Address",
+                        ClientName: "Test Client",
+                        IssueDate: new Date().toISOString(),
+                        Units: "Metric"
+                    }
+                },
+                Links: {}
+            },
+            Properties: {
+                "test-element-1": {
+                    "Name": "Test Element 1",
+                    "Category": "Test Category",
+                    "Type": "Test Type"
+                },
+                "test-element-2": {
+                    "Name": "Test Element 2",
+                    "Category": "Test Category",
+                    "Type": "Test Type"
+                }
+            },
+            Legend: {
+                "1": {
+                    "name": "Test Category",
+                    "color": "#FF0000",
+                    "visible": true
+                }
+            },
+            TreeView: {
+                "Test Category": {
+                    "test-element-1": "Test Element 1",
+                    "test-element-2": "Test Element 2"
+                }
+            },
+            Guid: `test-doc-guid-${Date.now()}`
+        };
+
+        const result = await ModelData.create(testDoc);
+
+        res.json({
+            success: true,
+            message: `Test data uploaded successfully for model: ${modelName}`,
+            documentId: result._id,
+            modelName: modelName
+        });
+
+    } catch (err) {
+        console.error('Error uploading test data:', err);
+        res.status(500).json({
+            error: 'Failed to upload test data',
+            message: err.message
+        });
+    }
+});
+
+// Test endpoint to delete test data
+app.delete('/api/modeldata/diagnostic/delete-test-data/:modelName', async (req, res) => {
+    try {
+        const modelName = req.params.modelName;
+
+        const result = await ModelData.deleteMany({
+            "ProjectInfo.Main.ProjectInfor.ModelName": modelName
+        });
+
+        res.json({
+            success: true,
+            message: `Deleted ${result.deletedCount} documents for model: ${modelName}`,
+            deletedCount: result.deletedCount
+        });
+
+    } catch (err) {
+        console.error('Error deleting test data:', err);
+        res.status(500).json({
+            error: 'Failed to delete test data',
+            message: err.message
         });
     }
 });
