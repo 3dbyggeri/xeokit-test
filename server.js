@@ -550,6 +550,105 @@ app.get('/api/modeldata/properties/:modelName', async (req, res) => {
     }
 });
 
+// S3-based endpoint to fetch properties and legend for a given model name from S3 JSON files
+app.get('/api/modeldata/S3properties/:modelName', async (req, res) => {
+    try {
+        const modelName = req.params.modelName;
+        console.log(`Fetching S3 properties for model: ${modelName}`);
+
+        if (!s3) {
+            return res.status(500).json({ error: 'S3 not configured' });
+        }
+
+        // List all objects in the bucket to find matching _modelData.json files
+        const data = await s3.listObjectsV2({
+            Bucket: process.env.S3_BUCKET,
+            MaxKeys: 1000
+        }).promise();
+
+        // Find the corresponding _modelData.json file
+        // If modelName is "abc.rvt", look for files ending with "abc_modelData.json"
+        const baseModelName = modelName.replace(/\.(rvt|ifc|dwg)$/i, ''); // Remove common extensions
+
+        let jsonFile = null;
+
+        // Try different matching strategies
+        const matchingStrategies = [
+            // Exact match: modelName_modelData.json
+            (file) => file.Key.endsWith(`${modelName}_modelData.json`),
+            // Base name match: baseName_modelData.json
+            (file) => file.Key.endsWith(`${baseModelName}_modelData.json`),
+            // Case insensitive exact match
+            (file) => file.Key.toLowerCase().endsWith(`${modelName.toLowerCase()}_modeldata.json`),
+            // Case insensitive base name match
+            (file) => file.Key.toLowerCase().endsWith(`${baseModelName.toLowerCase()}_modeldata.json`),
+            // Partial match in filename
+            (file) => file.Key.toLowerCase().includes(baseModelName.toLowerCase()) && file.Key.endsWith('_modelData.json')
+        ];
+
+        for (const strategy of matchingStrategies) {
+            jsonFile = data.Contents.find(strategy);
+            if (jsonFile) {
+                console.log(`Found JSON file using strategy: ${jsonFile.Key}`);
+                break;
+            }
+        }
+
+        if (!jsonFile) {
+            console.log(`No _modelData.json file found for model: ${modelName}`);
+            console.log(`Searched for patterns: ${modelName}_modelData.json, ${baseModelName}_modelData.json`);
+
+            // List available JSON files for debugging
+            const availableJsonFiles = data.Contents
+                .filter(file => file.Key.endsWith('_modelData.json'))
+                .map(file => file.Key)
+                .slice(0, 10); // Show first 10 for debugging
+
+            return res.status(404).json({
+                error: 'Model data not found in S3',
+                message: `No _modelData.json file found for model: ${modelName}`,
+                searchedFor: modelName,
+                baseModelName: baseModelName,
+                availableJsonFiles: availableJsonFiles
+            });
+        }
+
+        console.log(`Downloading JSON file: ${jsonFile.Key}`);
+
+        // Download the JSON file from S3
+        const s3Object = await s3.getObject({
+            Bucket: process.env.S3_BUCKET,
+            Key: jsonFile.Key
+        }).promise();
+
+        // Parse the JSON content
+        const jsonContent = JSON.parse(s3Object.Body.toString());
+
+        console.log(`Successfully loaded model data from S3: ${jsonFile.Key}`);
+
+        // Return the same structure as the MongoDB endpoint
+        res.json({
+            properties: jsonContent.Properties,
+            legend: jsonContent.Legend,
+            treeView: jsonContent.TreeView,
+            modelId: jsonFile.Key, // Use S3 key as model ID
+            actualModelName: jsonContent.ProjectInfo?.Main?.ProjectInfor?.ModelName || modelName,
+            source: 'S3',
+            s3Key: jsonFile.Key,
+            fileSize: jsonFile.Size,
+            lastModified: jsonFile.LastModified
+        });
+
+    } catch (err) {
+        console.error('Error fetching S3 model properties:', err);
+        res.status(500).json({
+            error: 'Failed to fetch S3 model properties',
+            message: err.message,
+            name: err.name
+        });
+    }
+});
+
 // Test endpoint to manually upload sample model data for testing
 app.post('/api/modeldata/diagnostic/upload-test-data', async (req, res) => {
     try {
