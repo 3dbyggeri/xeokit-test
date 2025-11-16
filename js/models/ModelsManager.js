@@ -407,7 +407,17 @@ export class ModelsManager {
                 }
                 
                 if (modelName && window.treeView) {
-                    const propRes = await fetch(`/api/modeldata/properties/${encodeURIComponent(modelName)}`);
+                    // Try S3properties endpoint first, fallback to MongoDB properties endpoint
+                    let propRes = await fetch(`/api/modeldata/S3properties/${encodeURIComponent(modelName)}`);
+                    let dataSource = 'S3';
+
+                    // If S3 fails, try MongoDB endpoint as fallback
+                    if (!propRes.ok) {
+                        console.log(`S3 properties failed for ${modelName}, trying MongoDB fallback...`);
+                        propRes = await fetch(`/api/modeldata/properties/${encodeURIComponent(modelName)}`);
+                        dataSource = 'MongoDB';
+                    }
+
                     if (propRes.ok) {
                         const propData = await propRes.json();
                         window.modelProperties = propData.properties;
@@ -415,7 +425,7 @@ export class ModelsManager {
 
                         // Store tree view data for this model
                         if (propData.treeView) {
-                            console.log('Storing tree data for model:', modelId, propData.treeView);
+                            console.log(`Storing tree data for model from ${dataSource}:`, modelId, propData.treeView);
                             this.loadedModelsTreeData[modelId] = propData.treeView;
                         } else {
                             this.loadedModelsTreeData[modelId] = null;
@@ -425,9 +435,14 @@ export class ModelsManager {
                         if (window.treeView && window.treeView.currentTab === 'storeys') {
                             window.treeView.buildTree();
                         }
-                        console.log('Loaded properties for model:', modelName);
+                        console.log(`Loaded properties for model from ${dataSource}:`, modelName);
+
+                        // Log additional S3 info if available
+                        if (dataSource === 'S3' && propData.s3Key) {
+                            console.log(`S3 file: ${propData.s3Key}, Size: ${propData.fileSize} bytes`);
+                        }
                     } else {
-                        console.warn('Failed to load properties for model:', modelName);
+                        console.warn(`Failed to load properties for model from both S3 and MongoDB:`, modelName);
                         window.modelProperties = null;
                         window.modelLegend = null;
                     }

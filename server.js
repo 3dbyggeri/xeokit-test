@@ -56,7 +56,10 @@ console.log('process.env.SCALINGO_MONGO_URL:', JSON.stringify(process.env.SCALIN
 if (MONGODB_URI) {
     mongoose.connect(MONGODB_URI, {
         useNewUrlParser: true,
-        useUnifiedTopology: true
+        useUnifiedTopology: true,
+        serverSelectionTimeoutMS: 10000, // 10 second timeout
+        socketTimeoutMS: 45000, // 45 second socket timeout
+        maxPoolSize: 10 // Limit connection pool
     })
     .then(() => console.log('MongoDB connected'))
     .catch(err => console.warn('MongoDB connection error:', err.message));
@@ -84,11 +87,10 @@ if (MONGODB_URI) {
 }
 
 // Initialize S3 if credentials are available
-let s3, bucketName, multer, upload;
+let s3, bucketName;
 if (process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY) {
     const AWS = require('aws-sdk');
-    const fs = require('fs');
-    
+
     // Configure AWS S3 (Scaleway Object Storage compatible)
     s3 = new AWS.S3({
         endpoint: process.env.S3_ENDPOINT || 'https://s3.fr-par.scw.cloud',
@@ -108,27 +110,10 @@ if (process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY) {
         })
         .catch(err => {
             console.error('S3 connection error:', err.message);
-            console.log('Continuing without S3 - file upload functionality will be limited');
+            console.log('Continuing without S3');
         });
-
-    // Configure Multer for file uploads
-    multer = require('multer');
-    const storage = multer.diskStorage({
-        destination: function (req, file, cb) {
-            const uploadPath = path.join(__dirname, 'uploads');
-            if (!fs.existsSync(uploadPath)) {
-                fs.mkdirSync(uploadPath, { recursive: true });
-            }
-            cb(null, uploadPath);
-        },
-        filename: function (req, file, cb) {
-            cb(null, `${Date.now()}-${file.originalname}`);
-        }
-    });
-
-    upload = multer({ storage: storage });
 } else {
-    console.warn('S3 credentials not provided. File upload functionality will be limited.');
+    console.warn('S3 credentials not provided. S3 functionality will be limited.');
 }
 
 // API Routes
@@ -165,9 +150,9 @@ app.get('/api/modeldata/models/:projectId', async (req, res) => {
                 }
             });
         }
-        
+
         const models = await Model.find({ projectId: req.params.projectId }).sort({ createdAt: -1 });
-        
+
         // Format response to match expected format in client
         const formattedModels = {};
         models.forEach(model => {
@@ -178,132 +163,11 @@ app.get('/api/modeldata/models/:projectId', async (req, res) => {
                 metadataUrl: model.metadataUrl
             };
         });
-        
+
         res.json(formattedModels);
     } catch (err) {
         console.error('Error getting models:', err);
         res.status(500).json({ error: 'Error fetching models' });
-    }
-});
-
-// Create a new project
-app.post('/api/modeldata/projects', async (req, res) => {
-    try {
-        if (!mongoose) {
-            return res.status(503).json({ error: 'Database functionality is not available' });
-        }
-        
-        const project = new Project({
-            name: req.body.name,
-            description: req.body.description
-        });
-        
-        await project.save();
-        res.status(201).json(project);
-    } catch (err) {
-        console.error('Error creating project:', err);
-        res.status(500).json({ error: 'Error creating project' });
-    }
-});
-
-// Upload XKT model and metadata
-app.post('/api/modeldata/upload', async (req, res) => {
-    try {
-        if (!s3 || !upload) {
-            return res.status(503).json({ error: 'File upload functionality is not available' });
-        }
-        
-        // Use upload middleware
-        upload.fields([
-            { name: 'xktFile', maxCount: 1 },
-            { name: 'metadataFile', maxCount: 1 }
-        ])(req, res, async function(err) {
-            if (err) {
-                return res.status(400).json({ error: err.message });
-            }
-            
-            try {
-                if (!req.files || !req.files.xktFile || !req.files.metadataFile) {
-                    return res.status(400).json({ error: 'Please upload both XKT and metadata files' });
-                }
-                
-                const xktFile = req.files.xktFile[0];
-                const metadataFile = req.files.metadataFile[0];
-                
-                // Upload XKT file to S3
-                const xktUploadParams = {
-                    Bucket: bucketName,
-                    Key: `models/${xktFile.filename}`,
-                    Body: require('fs').createReadStream(xktFile.path),
-                    ContentType: 'application/octet-stream'
-                };
-                
-                const xktResult = await s3.upload(xktUploadParams).promise();
-                
-                // Upload metadata file to S3
-                const metadataUploadParams = {
-                    Bucket: bucketName,
-                    Key: `metadata/${metadataFile.filename}`,
-                    Body: require('fs').createReadStream(metadataFile.path),
-                    ContentType: 'application/json'
-                };
-                
-                const metadataResult = await s3.upload(metadataUploadParams).promise();
-                
-                // Create new model in MongoDB
-                const model = new Model({
-                    name: req.body.name,
-                    projectId: req.body.projectId,
-                    description: req.body.description,
-                    xktUrl: xktResult.Location,
-                    metadataUrl: metadataResult.Location
-                });
-                
-                await model.save();
-                
-                // Clean up temporary files
-                require('fs').unlinkSync(xktFile.path);
-                require('fs').unlinkSync(metadataFile.path);
-                
-                res.status(201).json({
-                    message: 'Model uploaded successfully',
-                    model: model
-                });
-            } catch (err) {
-                console.error('Error in file upload:', err);
-                res.status(500).json({ error: 'Error uploading files' });
-            }
-        });
-    } catch (err) {
-        console.error('Error setting up upload:', err);
-        res.status(500).json({ error: 'Error setting up file upload' });
-    }
-});
-
-// Update a model
-app.put('/api/modeldata/models/:modelId', async (req, res) => {
-    try {
-        if (!mongoose) {
-            return res.status(503).json({ error: 'Database functionality is not available' });
-        }
-        
-        const model = await Model.findByIdAndUpdate(
-            req.params.modelId,
-            {
-                name: req.body.name,
-                description: req.body.description
-            },
-            { new: true }
-        );
-        
-        if (!model) {
-            return res.status(404).json({ error: 'Model not found' });
-        }
-        
-        res.json(model);
-    } catch (err) {
-        console.error('Error updating model:', err);
-        res.status(500).json({ error: 'Error updating model' });
     }
 });
 
@@ -313,24 +177,24 @@ app.delete('/api/modeldata/models/:modelId', async (req, res) => {
         if (!mongoose || !s3) {
             return res.status(503).json({ error: 'Database or storage functionality is not available' });
         }
-        
+
         const model = await Model.findById(req.params.modelId);
-        
+
         if (!model) {
             return res.status(404).json({ error: 'Model not found' });
         }
-        
+
         // Extract keys from URLs
         const xktKey = model.xktUrl.split('/').pop();
         const metadataKey = model.metadataUrl.split('/').pop();
-        
+
         // Delete files from S3
         await s3.deleteObject({ Bucket: bucketName, Key: `models/${xktKey}` }).promise();
         await s3.deleteObject({ Bucket: bucketName, Key: `metadata/${metadataKey}` }).promise();
-        
+
         // Delete model from MongoDB
         await Model.findByIdAndDelete(req.params.modelId);
-        
+
         res.json({ message: 'Model deleted successfully' });
     } catch (err) {
         console.error('Error deleting model:', err);
@@ -397,32 +261,351 @@ app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
 const ModelDataSchema = new mongoose.Schema({}, { strict: false });
 const ModelData = mongoose.model('ModelData', ModelDataSchema, 'modeldata'); // Replace with your actual collection name
 
-// Endpoint to fetch properties and legend for a given model name
+// Diagnostic endpoint to list all model names in the collection
+app.get('/api/modeldata/diagnostic/list-models', async (req, res) => {
+    try {
+        console.log('Listing all models in the collection...');
+
+        // Check MongoDB connection
+        if (mongoose.connection.readyState !== 1) {
+            return res.status(500).json({
+                error: 'MongoDB not connected',
+                connectionState: mongoose.connection.readyState
+            });
+        }
+
+        // Get all documents and extract model names with timeout
+        const docs = await ModelData.find({}, {
+            "ProjectInfo.Main.ProjectInfor.ModelName": 1,
+            "ProjectInfo.Main.ProjectInfor.ModelGuid": 1,
+            "_id": 1
+        }).limit(100).maxTimeMS(10000); // 10 second timeout
+
+        const modelList = docs.map(doc => ({
+            _id: doc._id,
+            modelName: doc.ProjectInfo?.Main?.ProjectInfor?.ModelName || 'N/A',
+            modelGuid: doc.ProjectInfo?.Main?.ProjectInfor?.ModelGuid || 'N/A',
+            hasProjectInfo: !!doc.ProjectInfo,
+            hasMain: !!doc.ProjectInfo?.Main,
+            hasProjectInfor: !!doc.ProjectInfo?.Main?.ProjectInfor
+        }));
+
+        console.log(`Found ${modelList.length} models`);
+
+        res.json({
+            success: true,
+            totalCount: docs.length,
+            models: modelList,
+            connectionState: mongoose.connection.readyState
+        });
+    } catch (err) {
+        console.error('Error listing models:', err);
+        res.status(500).json({
+            error: 'Failed to list models',
+            message: err.message,
+            name: err.name
+        });
+    }
+});
+
+// Diagnostic endpoint to search for a specific model name with flexible queries
+app.get('/api/modeldata/diagnostic/search/:modelName', async (req, res) => {
+    try {
+        const modelName = req.params.modelName;
+        console.log(`Searching for model: ${modelName}`);
+
+        // Try multiple query patterns to find the document
+        const queries = [
+            { "ProjectInfo.Main.ProjectInfor.ModelName": modelName },
+            { "ProjectInfo.Main.ProjectInfor.ModelName": { $regex: modelName, $options: 'i' } },
+            { "ProjectInfo.Main.ProjectInfor.ModelName": { $regex: modelName.replace(/\./g, '\\.'), $options: 'i' } },
+        ];
+
+        const results = [];
+
+        for (let i = 0; i < queries.length; i++) {
+            const query = queries[i];
+            console.log(`Trying query ${i + 1}:`, JSON.stringify(query));
+
+            const docs = await ModelData.find(query).limit(5);
+            results.push({
+                queryIndex: i + 1,
+                query: query,
+                matchCount: docs.length,
+                matches: docs.map(doc => ({
+                    _id: doc._id,
+                    modelName: doc.ProjectInfo?.Main?.ProjectInfor?.ModelName,
+                    modelGuid: doc.ProjectInfo?.Main?.ProjectInfor?.ModelGuid,
+                    hasProperties: !!doc.Properties,
+                    hasLegend: !!doc.Legend,
+                    hasTreeView: !!doc.TreeView
+                }))
+            });
+        }
+
+        res.json({
+            success: true,
+            searchTerm: modelName,
+            results: results
+        });
+    } catch (err) {
+        console.error('Error searching for model:', err);
+        res.status(500).json({
+            error: 'Failed to search for model',
+            message: err.message
+        });
+    }
+});
+
+// Enhanced endpoint to fetch properties and legend for a given model name
 app.get('/api/modeldata/properties/:modelName', async (req, res) => {
     try {
         const modelName = req.params.modelName;
-        const doc = await ModelData.findOne({
+        console.log(`Fetching properties for model: ${modelName}`);
+
+        // Try exact match first
+        let doc = await ModelData.findOne({
             "ProjectInfo.Main.ProjectInfor.ModelName": modelName
         });
-        
+
+        // If not found, try case-insensitive search
         if (!doc) {
-            return res.status(404).json({ 
-                error: 'Model data not found',
-                message: `No model found with name: ${modelName}`
+            console.log(`Exact match failed, trying case-insensitive search for: ${modelName}`);
+            doc = await ModelData.findOne({
+                "ProjectInfo.Main.ProjectInfor.ModelName": { $regex: `^${modelName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' }
             });
         }
-        
-        res.json({ 
-            properties: doc.Properties, 
+
+        // If still not found, try partial match
+        if (!doc) {
+            console.log(`Case-insensitive failed, trying partial match for: ${modelName}`);
+            doc = await ModelData.findOne({
+                "ProjectInfo.Main.ProjectInfor.ModelName": { $regex: modelName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
+            });
+        }
+
+        if (!doc) {
+            console.log(`No document found for model name: ${modelName}`);
+            return res.status(404).json({
+                error: 'Model data not found',
+                message: `No model found with name: ${modelName}`,
+                searchedFor: modelName
+            });
+        }
+
+        console.log(`Found document with ID: ${doc._id} for model: ${doc.ProjectInfo?.Main?.ProjectInfor?.ModelName}`);
+
+        res.json({
+            properties: doc.Properties,
             legend: doc.Legend,
             treeView: doc.TreeView,
-            modelId: doc._id // Include the model ID in response for reference
+            modelId: doc._id,
+            actualModelName: doc.ProjectInfo?.Main?.ProjectInfor?.ModelName
         });
     } catch (err) {
         console.error('Error fetching model properties:', err);
-        res.status(500).json({ 
+        res.status(500).json({
             error: 'Failed to fetch model properties',
-            message: err.message 
+            message: err.message
+        });
+    }
+});
+
+// S3-based endpoint to fetch properties and legend for a given model name from S3 JSON files
+app.get('/api/modeldata/S3properties/:modelName', async (req, res) => {
+    try {
+        const modelName = req.params.modelName;
+        console.log(`Fetching S3 properties for model: ${modelName}`);
+
+        if (!s3) {
+            return res.status(500).json({ error: 'S3 not configured' });
+        }
+
+        // List all objects in the bucket to find matching _modelData.json files
+        const data = await s3.listObjectsV2({
+            Bucket: process.env.S3_BUCKET,
+            MaxKeys: 1000
+        }).promise();
+
+        // Find the corresponding _modelData.json file
+        // If modelName is "abc.rvt", look for files ending with "abc_modelData.json"
+        const baseModelName = modelName.replace(/\.(rvt|ifc|dwg)$/i, ''); // Remove common extensions
+
+        let jsonFile = null;
+
+        // Try different matching strategies
+        const matchingStrategies = [
+            // Exact match: modelName_modelData.json
+            (file) => file.Key.endsWith(`${modelName}_modelData.json`),
+            // Base name match: baseName_modelData.json
+            (file) => file.Key.endsWith(`${baseModelName}_modelData.json`),
+            // Case insensitive exact match
+            (file) => file.Key.toLowerCase().endsWith(`${modelName.toLowerCase()}_modeldata.json`),
+            // Case insensitive base name match
+            (file) => file.Key.toLowerCase().endsWith(`${baseModelName.toLowerCase()}_modeldata.json`),
+            // Partial match in filename
+            (file) => file.Key.toLowerCase().includes(baseModelName.toLowerCase()) && file.Key.endsWith('_modelData.json')
+        ];
+
+        for (const strategy of matchingStrategies) {
+            jsonFile = data.Contents.find(strategy);
+            if (jsonFile) {
+                console.log(`Found JSON file using strategy: ${jsonFile.Key}`);
+                break;
+            }
+        }
+
+        if (!jsonFile) {
+            console.log(`No _modelData.json file found for model: ${modelName}`);
+            console.log(`Searched for patterns: ${modelName}_modelData.json, ${baseModelName}_modelData.json`);
+
+            // List available JSON files for debugging
+            const availableJsonFiles = data.Contents
+                .filter(file => file.Key.endsWith('_modelData.json'))
+                .map(file => file.Key)
+                .slice(0, 10); // Show first 10 for debugging
+
+            return res.status(404).json({
+                error: 'Model data not found in S3',
+                message: `No _modelData.json file found for model: ${modelName}`,
+                searchedFor: modelName,
+                baseModelName: baseModelName,
+                availableJsonFiles: availableJsonFiles
+            });
+        }
+
+        console.log(`Downloading JSON file: ${jsonFile.Key}`);
+
+        // Download the JSON file from S3
+        const s3Object = await s3.getObject({
+            Bucket: process.env.S3_BUCKET,
+            Key: jsonFile.Key
+        }).promise();
+
+        // Parse the JSON content
+        const jsonContent = JSON.parse(s3Object.Body.toString());
+
+        console.log(`Successfully loaded model data from S3: ${jsonFile.Key}`);
+
+        // Return the same structure as the MongoDB endpoint
+        res.json({
+            properties: jsonContent.Properties,
+            legend: jsonContent.Legend,
+            treeView: jsonContent.TreeView,
+            modelId: jsonFile.Key, // Use S3 key as model ID
+            actualModelName: jsonContent.ProjectInfo?.Main?.ProjectInfor?.ModelName || modelName,
+            source: 'S3',
+            s3Key: jsonFile.Key,
+            fileSize: jsonFile.Size,
+            lastModified: jsonFile.LastModified
+        });
+
+    } catch (err) {
+        console.error('Error fetching S3 model properties:', err);
+        res.status(500).json({
+            error: 'Failed to fetch S3 model properties',
+            message: err.message,
+            name: err.name
+        });
+    }
+});
+
+// Test endpoint to manually upload sample model data for testing
+app.post('/api/modeldata/diagnostic/upload-test-data', async (req, res) => {
+    try {
+        const { modelName, modelGuid } = req.body;
+
+        if (!modelName) {
+            return res.status(400).json({ error: 'modelName is required' });
+        }
+
+        const testDoc = {
+            ProjectInfo: {
+                Main: {
+                    ProjectInfor: {
+                        ProjectId: "test-project-id",
+                        ProjectInfoUniqueId: "test-unique-id",
+                        ProjectExportedTime: new Date().toISOString(),
+                        ExportedBy: "Test\\User",
+                        DocumentPath: `C:\\TestPath\\${modelName}`,
+                        ModelName: modelName,
+                        ModelGuid: modelGuid || `test-guid-${Date.now()}`,
+                        BuildingName: "Test Building",
+                        Author: "Test Author",
+                        Address: "Test Address",
+                        ClientName: "Test Client",
+                        IssueDate: new Date().toISOString(),
+                        Units: "Metric"
+                    }
+                },
+                Links: {}
+            },
+            Properties: {
+                "test-element-1": {
+                    "Name": "Test Element 1",
+                    "Category": "Test Category",
+                    "Type": "Test Type"
+                },
+                "test-element-2": {
+                    "Name": "Test Element 2",
+                    "Category": "Test Category",
+                    "Type": "Test Type"
+                }
+            },
+            Legend: {
+                "1": {
+                    "name": "Test Category",
+                    "color": "#FF0000",
+                    "visible": true
+                }
+            },
+            TreeView: {
+                "Test Category": {
+                    "test-element-1": "Test Element 1",
+                    "test-element-2": "Test Element 2"
+                }
+            },
+            Guid: `test-doc-guid-${Date.now()}`
+        };
+
+        const result = await ModelData.create(testDoc);
+
+        res.json({
+            success: true,
+            message: `Test data uploaded successfully for model: ${modelName}`,
+            documentId: result._id,
+            modelName: modelName
+        });
+
+    } catch (err) {
+        console.error('Error uploading test data:', err);
+        res.status(500).json({
+            error: 'Failed to upload test data',
+            message: err.message
+        });
+    }
+});
+
+// Test endpoint to delete test data
+app.delete('/api/modeldata/diagnostic/delete-test-data/:modelName', async (req, res) => {
+    try {
+        const modelName = req.params.modelName;
+
+        const result = await ModelData.deleteMany({
+            "ProjectInfo.Main.ProjectInfor.ModelName": modelName
+        });
+
+        res.json({
+            success: true,
+            message: `Deleted ${result.deletedCount} documents for model: ${modelName}`,
+            deletedCount: result.deletedCount
+        });
+
+    } catch (err) {
+        console.error('Error deleting test data:', err);
+        res.status(500).json({
+            error: 'Failed to delete test data',
+            message: err.message
         });
     }
 });
