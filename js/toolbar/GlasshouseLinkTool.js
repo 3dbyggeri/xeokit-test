@@ -627,9 +627,28 @@ export class GlasshouseLinkTool extends Controller {
             this.viewer.scene.setObjectsSelected(matchingObjects, true);
             this.viewer.scene.setObjectsHighlighted(matchingObjects, true);
             
+            // Update metadata panel to show properties for selected objects
+            // Show metadata for the first selected object (or all if single selection)
+            if (matchingObjects.length === 1) {
+                const objectId = matchingObjects[0];
+                const entity = this.viewer.scene.objects[objectId];
+                if (entity) {
+                    this._showMetadataForObject(entity);
+                }
+            } else if (matchingObjects.length > 1) {
+                // For multiple objects, show metadata for the first one
+                const objectId = matchingObjects[0];
+                const entity = this.viewer.scene.objects[objectId];
+                if (entity) {
+                    this._showMetadataForObject(entity);
+                }
+            }
+            
             console.log(`Selected ${matchingObjects.length} objects by ${this._parameterName}`);
         } else {
             console.warn(`No objects found with ${this._parameterName} values:`, parameterValues);
+            // Clear metadata when no objects are found
+            this._clearMetadata();
         }
     }
 
@@ -646,9 +665,28 @@ export class GlasshouseLinkTool extends Controller {
             this.viewer.scene.setObjectsSelected(matchingObjects, true);
             this.viewer.scene.setObjectsHighlighted(matchingObjects, true);
             
+            // Update metadata panel to show properties for isolated objects
+            // Show metadata for the first isolated object (or all if single selection)
+            if (matchingObjects.length === 1) {
+                const objectId = matchingObjects[0];
+                const entity = this.viewer.scene.objects[objectId];
+                if (entity) {
+                    this._showMetadataForObject(entity);
+                }
+            } else if (matchingObjects.length > 1) {
+                // For multiple objects, show metadata for the first one
+                const objectId = matchingObjects[0];
+                const entity = this.viewer.scene.objects[objectId];
+                if (entity) {
+                    this._showMetadataForObject(entity);
+                }
+            }
+            
             console.log(`Isolated ${matchingObjects.length} objects by ${this._parameterName}`);
         } else {
             console.warn(`No objects found with ${this._parameterName} values:`, parameterValues);
+            // Clear metadata when no objects are found
+            this._clearMetadata();
         }
     }
 
@@ -734,6 +772,92 @@ export class GlasshouseLinkTool extends Controller {
         // Property not found
         console.warn(`Property '${propertyName}' not found for element ID: ${elementId}`);
         return null;
+    }
+
+    /**
+     * Show metadata for a selected object
+     */
+    _showMetadataForObject(entity) {
+        // Expand metadata window if collapsed
+        const metadataBox = document.getElementById('metadataBox');
+        if (metadataBox && metadataBox.classList.contains('collapsed')) {
+            metadataBox.classList.remove('collapsed');
+        }
+
+        // Access global variables from viewer.js
+        if (typeof window.modelProperties === 'undefined' || typeof window.modelLegend === 'undefined') {
+            console.log('Model properties or legend not available');
+            this._showBasicMetadata(entity);
+            return;
+        }
+
+        const metadataTable = document.querySelector('#metadataTable tbody');
+        if (!metadataTable) {
+            console.warn('Metadata table not found');
+            return;
+        }
+        metadataTable.innerHTML = '';
+
+        // Extract elementId from entity.id (e.g., Surface[105545] => 105545)
+        const match = entity.id.match(/\[(\d+)\]/);
+        const elementId = match ? match[1] : null;
+
+        if (elementId && window.modelProperties[elementId]) {
+            const props = window.modelProperties[elementId];
+            console.log('Showing metadata for selected object:', entity.id);
+
+            // Map property indices to names using legend
+            Object.entries(props).forEach(([key, value]) => {
+                let propName = key;
+                if (window.modelLegend[key] && window.modelLegend[key].Name) {
+                    propName = window.modelLegend[key].Name;
+                }
+                let displayValue;
+                if (value !== null && typeof value === 'object') {
+                    displayValue = JSON.stringify(value);
+                } else {
+                    displayValue = value;
+                }
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${propName}</td>
+                    <td>${displayValue}</td>
+                `;
+                metadataTable.appendChild(row);
+            });
+        } else {
+            this._showBasicMetadata(entity);
+        }
+    }
+
+    /**
+     * Show basic metadata when detailed properties aren't available
+     */
+    _showBasicMetadata(entity) {
+        const metadataTable = document.querySelector('#metadataTable tbody');
+        if (!metadataTable) {
+            console.warn('Metadata table not found');
+            return;
+        }
+        metadataTable.innerHTML = '';
+
+        const idRow = document.createElement('tr');
+        idRow.innerHTML = `
+            <td>ID</td>
+            <td>${entity.id}</td>
+        `;
+        metadataTable.appendChild(idRow);
+    }
+
+    /**
+     * Clear metadata display
+     */
+    _clearMetadata() {
+        const metadataTable = document.querySelector('#metadataTable tbody');
+        if (metadataTable) {
+            metadataTable.innerHTML = '';
+            console.log('Metadata cleared');
+        }
     }
 
     _disconnect() {
