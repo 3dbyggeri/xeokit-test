@@ -79,20 +79,30 @@ The application will be available at http://localhost:8080 (or the PORT specifie
 
 ## API Endpoints
 
-### Projects
+### Projects & Models
 
 - `GET /api/modeldata/projects` - Get all projects
-- `POST /api/modeldata/projects` - Create a new project
-
-### Models
-
 - `GET /api/modeldata/models/:projectId` - Get models for a project
-- `PUT /api/modeldata/models/:modelId` - Update a model
 - `DELETE /api/modeldata/models/:modelId` - Delete a model
+- `GET /api/modeldata/xkt-files` - List all XKT files in S3 bucket
+- `GET /api/modeldata/xkt/:key` - Proxy endpoint for XKT files from S3
+- `GET /api/modeldata/properties/:modelName` - Get model properties from MongoDB
+- `GET /api/modeldata/S3properties/:modelName` - Get model properties from S3
 
-### File Upload
+### Glasshouse Integration
 
-- `POST /api/modeldata/upload` - Upload XKT and metadata files
+- `POST /api/glasshouse/login` - Login to Glasshouse
+- `GET /api/glasshouse/projects` - Get Glasshouse projects
+- `GET /api/glasshouse/projects/:projectId/models` - Get models for a Glasshouse project
+- `POST /api/glasshouse/import/project-changes` - Import project changes from Glasshouse
+- `POST /api/glasshouse/import/bim-objects` - Import BIM objects from Glasshouse
+
+### Diagnostic Endpoints (for testing)
+
+- `GET /api/modeldata/diagnostic/list-models` - List all models in MongoDB
+- `GET /api/modeldata/diagnostic/search/:modelName` - Search for a specific model
+- `POST /api/modeldata/diagnostic/upload-test-data` - Upload test data
+- `DELETE /api/modeldata/diagnostic/delete-test-data/:modelName` - Delete test data
 
 ## License
 

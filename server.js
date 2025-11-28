@@ -1,11 +1,28 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-require('dotenv').config();
+const axios = require('axios');
+
+// Load environment variables - try config.env first, then .env
+require('dotenv').config({ path: './wwwroot/config.env' });
+require('dotenv').config(); // This will override with .env if it exists
+
 const mongoose = require('mongoose');
 
 const app = express();
 const PORT = process.env.PORT || 8080;
+
+// In-memory storage for imported properties from Glasshouse
+const importedProperties = new Map(); // Key: modelName, Value: Map of objectId -> properties
+
+// In-memory storage for global project/model selection (persists across sessions)
+let globalProjectModelSelection = {
+    projectId: null,
+    projectName: null,
+    modelId: null,
+    modelName: null,
+    lastUpdated: null
+};
 
 // Middleware
 app.use(cors());
@@ -39,7 +56,10 @@ console.log('process.env.SCALINGO_MONGO_URL:', JSON.stringify(process.env.SCALIN
 if (MONGODB_URI) {
     mongoose.connect(MONGODB_URI, {
         useNewUrlParser: true,
-        useUnifiedTopology: true
+        useUnifiedTopology: true,
+        serverSelectionTimeoutMS: 10000, // 10 second timeout
+        socketTimeoutMS: 45000, // 45 second socket timeout
+        maxPoolSize: 10 // Limit connection pool
     })
     .then(() => console.log('MongoDB connected'))
     .catch(err => console.warn('MongoDB connection error:', err.message));
@@ -67,11 +87,10 @@ if (MONGODB_URI) {
 }
 
 // Initialize S3 if credentials are available
-let s3, bucketName, multer, upload;
+let s3, bucketName;
 if (process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY) {
     const AWS = require('aws-sdk');
-    const fs = require('fs');
-    
+
     // Configure AWS S3 (Scaleway Object Storage compatible)
     s3 = new AWS.S3({
         endpoint: process.env.S3_ENDPOINT || 'https://s3.fr-par.scw.cloud',
@@ -91,27 +110,10 @@ if (process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY) {
         })
         .catch(err => {
             console.error('S3 connection error:', err.message);
-            console.log('Continuing without S3 - file upload functionality will be limited');
+            console.log('Continuing without S3');
         });
-
-    // Configure Multer for file uploads
-    multer = require('multer');
-    const storage = multer.diskStorage({
-        destination: function (req, file, cb) {
-            const uploadPath = path.join(__dirname, 'uploads');
-            if (!fs.existsSync(uploadPath)) {
-                fs.mkdirSync(uploadPath, { recursive: true });
-            }
-            cb(null, uploadPath);
-        },
-        filename: function (req, file, cb) {
-            cb(null, `${Date.now()}-${file.originalname}`);
-        }
-    });
-
-    upload = multer({ storage: storage });
 } else {
-    console.warn('S3 credentials not provided. File upload functionality will be limited.');
+    console.warn('S3 credentials not provided. S3 functionality will be limited.');
 }
 
 // API Routes
@@ -148,9 +150,9 @@ app.get('/api/modeldata/models/:projectId', async (req, res) => {
                 }
             });
         }
-        
+
         const models = await Model.find({ projectId: req.params.projectId }).sort({ createdAt: -1 });
-        
+
         // Format response to match expected format in client
         const formattedModels = {};
         models.forEach(model => {
@@ -161,132 +163,11 @@ app.get('/api/modeldata/models/:projectId', async (req, res) => {
                 metadataUrl: model.metadataUrl
             };
         });
-        
+
         res.json(formattedModels);
     } catch (err) {
         console.error('Error getting models:', err);
         res.status(500).json({ error: 'Error fetching models' });
-    }
-});
-
-// Create a new project
-app.post('/api/modeldata/projects', async (req, res) => {
-    try {
-        if (!mongoose) {
-            return res.status(503).json({ error: 'Database functionality is not available' });
-        }
-        
-        const project = new Project({
-            name: req.body.name,
-            description: req.body.description
-        });
-        
-        await project.save();
-        res.status(201).json(project);
-    } catch (err) {
-        console.error('Error creating project:', err);
-        res.status(500).json({ error: 'Error creating project' });
-    }
-});
-
-// Upload XKT model and metadata
-app.post('/api/modeldata/upload', async (req, res) => {
-    try {
-        if (!s3 || !upload) {
-            return res.status(503).json({ error: 'File upload functionality is not available' });
-        }
-        
-        // Use upload middleware
-        upload.fields([
-            { name: 'xktFile', maxCount: 1 },
-            { name: 'metadataFile', maxCount: 1 }
-        ])(req, res, async function(err) {
-            if (err) {
-                return res.status(400).json({ error: err.message });
-            }
-            
-            try {
-                if (!req.files || !req.files.xktFile || !req.files.metadataFile) {
-                    return res.status(400).json({ error: 'Please upload both XKT and metadata files' });
-                }
-                
-                const xktFile = req.files.xktFile[0];
-                const metadataFile = req.files.metadataFile[0];
-                
-                // Upload XKT file to S3
-                const xktUploadParams = {
-                    Bucket: bucketName,
-                    Key: `models/${xktFile.filename}`,
-                    Body: require('fs').createReadStream(xktFile.path),
-                    ContentType: 'application/octet-stream'
-                };
-                
-                const xktResult = await s3.upload(xktUploadParams).promise();
-                
-                // Upload metadata file to S3
-                const metadataUploadParams = {
-                    Bucket: bucketName,
-                    Key: `metadata/${metadataFile.filename}`,
-                    Body: require('fs').createReadStream(metadataFile.path),
-                    ContentType: 'application/json'
-                };
-                
-                const metadataResult = await s3.upload(metadataUploadParams).promise();
-                
-                // Create new model in MongoDB
-                const model = new Model({
-                    name: req.body.name,
-                    projectId: req.body.projectId,
-                    description: req.body.description,
-                    xktUrl: xktResult.Location,
-                    metadataUrl: metadataResult.Location
-                });
-                
-                await model.save();
-                
-                // Clean up temporary files
-                require('fs').unlinkSync(xktFile.path);
-                require('fs').unlinkSync(metadataFile.path);
-                
-                res.status(201).json({
-                    message: 'Model uploaded successfully',
-                    model: model
-                });
-            } catch (err) {
-                console.error('Error in file upload:', err);
-                res.status(500).json({ error: 'Error uploading files' });
-            }
-        });
-    } catch (err) {
-        console.error('Error setting up upload:', err);
-        res.status(500).json({ error: 'Error setting up file upload' });
-    }
-});
-
-// Update a model
-app.put('/api/modeldata/models/:modelId', async (req, res) => {
-    try {
-        if (!mongoose) {
-            return res.status(503).json({ error: 'Database functionality is not available' });
-        }
-        
-        const model = await Model.findByIdAndUpdate(
-            req.params.modelId,
-            {
-                name: req.body.name,
-                description: req.body.description
-            },
-            { new: true }
-        );
-        
-        if (!model) {
-            return res.status(404).json({ error: 'Model not found' });
-        }
-        
-        res.json(model);
-    } catch (err) {
-        console.error('Error updating model:', err);
-        res.status(500).json({ error: 'Error updating model' });
     }
 });
 
@@ -296,24 +177,24 @@ app.delete('/api/modeldata/models/:modelId', async (req, res) => {
         if (!mongoose || !s3) {
             return res.status(503).json({ error: 'Database or storage functionality is not available' });
         }
-        
+
         const model = await Model.findById(req.params.modelId);
-        
+
         if (!model) {
             return res.status(404).json({ error: 'Model not found' });
         }
-        
+
         // Extract keys from URLs
         const xktKey = model.xktUrl.split('/').pop();
         const metadataKey = model.metadataUrl.split('/').pop();
-        
+
         // Delete files from S3
         await s3.deleteObject({ Bucket: bucketName, Key: `models/${xktKey}` }).promise();
         await s3.deleteObject({ Bucket: bucketName, Key: `metadata/${metadataKey}` }).promise();
-        
+
         // Delete model from MongoDB
         await Model.findByIdAndDelete(req.params.modelId);
-        
+
         res.json({ message: 'Model deleted successfully' });
     } catch (err) {
         console.error('Error deleting model:', err);
@@ -356,7 +237,7 @@ app.get('/api/modeldata/xkt-files', async (req, res) => {
 app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
     try {
         const key = decodeURIComponent(req.params.key);
-        
+
         // Get the object from S3
         const s3Object = await s3.getObject({
             Bucket: process.env.S3_BUCKET,
@@ -366,7 +247,7 @@ app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
         // Set appropriate headers
         res.setHeader('Content-Type', 'application/octet-stream');
         res.setHeader('Content-Length', s3Object.ContentLength);
-        
+
         // Send the file data
         res.send(s3Object.Body);
 
@@ -380,34 +261,898 @@ app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
 const ModelDataSchema = new mongoose.Schema({}, { strict: false });
 const ModelData = mongoose.model('ModelData', ModelDataSchema, 'modeldata'); // Replace with your actual collection name
 
-// Endpoint to fetch properties and legend for a given model name
+// Diagnostic endpoint to list all model names in the collection
+app.get('/api/modeldata/diagnostic/list-models', async (req, res) => {
+    try {
+        console.log('Listing all models in the collection...');
+
+        // Check MongoDB connection
+        if (mongoose.connection.readyState !== 1) {
+            return res.status(500).json({
+                error: 'MongoDB not connected',
+                connectionState: mongoose.connection.readyState
+            });
+        }
+
+        // Get all documents and extract model names with timeout
+        const docs = await ModelData.find({}, {
+            "ProjectInfo.Main.ProjectInfor.ModelName": 1,
+            "ProjectInfo.Main.ProjectInfor.ModelGuid": 1,
+            "_id": 1
+        }).limit(100).maxTimeMS(10000); // 10 second timeout
+
+        const modelList = docs.map(doc => ({
+            _id: doc._id,
+            modelName: doc.ProjectInfo?.Main?.ProjectInfor?.ModelName || 'N/A',
+            modelGuid: doc.ProjectInfo?.Main?.ProjectInfor?.ModelGuid || 'N/A',
+            hasProjectInfo: !!doc.ProjectInfo,
+            hasMain: !!doc.ProjectInfo?.Main,
+            hasProjectInfor: !!doc.ProjectInfo?.Main?.ProjectInfor
+        }));
+
+        console.log(`Found ${modelList.length} models`);
+
+        res.json({
+            success: true,
+            totalCount: docs.length,
+            models: modelList,
+            connectionState: mongoose.connection.readyState
+        });
+    } catch (err) {
+        console.error('Error listing models:', err);
+        res.status(500).json({
+            error: 'Failed to list models',
+            message: err.message,
+            name: err.name
+        });
+    }
+});
+
+// Diagnostic endpoint to search for a specific model name with flexible queries
+app.get('/api/modeldata/diagnostic/search/:modelName', async (req, res) => {
+    try {
+        const modelName = req.params.modelName;
+        console.log(`Searching for model: ${modelName}`);
+
+        // Try multiple query patterns to find the document
+        const queries = [
+            { "ProjectInfo.Main.ProjectInfor.ModelName": modelName },
+            { "ProjectInfo.Main.ProjectInfor.ModelName": { $regex: modelName, $options: 'i' } },
+            { "ProjectInfo.Main.ProjectInfor.ModelName": { $regex: modelName.replace(/\./g, '\\.'), $options: 'i' } },
+        ];
+
+        const results = [];
+
+        for (let i = 0; i < queries.length; i++) {
+            const query = queries[i];
+            console.log(`Trying query ${i + 1}:`, JSON.stringify(query));
+
+            const docs = await ModelData.find(query).limit(5);
+            results.push({
+                queryIndex: i + 1,
+                query: query,
+                matchCount: docs.length,
+                matches: docs.map(doc => ({
+                    _id: doc._id,
+                    modelName: doc.ProjectInfo?.Main?.ProjectInfor?.ModelName,
+                    modelGuid: doc.ProjectInfo?.Main?.ProjectInfor?.ModelGuid,
+                    hasProperties: !!doc.Properties,
+                    hasLegend: !!doc.Legend,
+                    hasTreeView: !!doc.TreeView
+                }))
+            });
+        }
+
+        res.json({
+            success: true,
+            searchTerm: modelName,
+            results: results
+        });
+    } catch (err) {
+        console.error('Error searching for model:', err);
+        res.status(500).json({
+            error: 'Failed to search for model',
+            message: err.message
+        });
+    }
+});
+
+// Enhanced endpoint to fetch properties and legend for a given model name
 app.get('/api/modeldata/properties/:modelName', async (req, res) => {
     try {
         const modelName = req.params.modelName;
-        const doc = await ModelData.findOne({
+        console.log(`Fetching properties for model: ${modelName}`);
+
+        // Try exact match first
+        let doc = await ModelData.findOne({
             "ProjectInfo.Main.ProjectInfor.ModelName": modelName
         });
-        
+
+        // If not found, try case-insensitive search
         if (!doc) {
-            return res.status(404).json({ 
-                error: 'Model data not found',
-                message: `No model found with name: ${modelName}`
+            console.log(`Exact match failed, trying case-insensitive search for: ${modelName}`);
+            doc = await ModelData.findOne({
+                "ProjectInfo.Main.ProjectInfor.ModelName": { $regex: `^${modelName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, $options: 'i' }
             });
         }
-        
-        res.json({ 
-            properties: doc.Properties, 
+
+        // If still not found, try partial match
+        if (!doc) {
+            console.log(`Case-insensitive failed, trying partial match for: ${modelName}`);
+            doc = await ModelData.findOne({
+                "ProjectInfo.Main.ProjectInfor.ModelName": { $regex: modelName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' }
+            });
+        }
+
+        if (!doc) {
+            console.log(`No document found for model name: ${modelName}`);
+            return res.status(404).json({
+                error: 'Model data not found',
+                message: `No model found with name: ${modelName}`,
+                searchedFor: modelName
+            });
+        }
+
+        console.log(`Found document with ID: ${doc._id} for model: ${doc.ProjectInfo?.Main?.ProjectInfor?.ModelName}`);
+
+        res.json({
+            properties: doc.Properties,
             legend: doc.Legend,
             treeView: doc.TreeView,
-            modelId: doc._id // Include the model ID in response for reference
+            modelId: doc._id,
+            actualModelName: doc.ProjectInfo?.Main?.ProjectInfor?.ModelName
         });
     } catch (err) {
         console.error('Error fetching model properties:', err);
-        res.status(500).json({ 
+        res.status(500).json({
             error: 'Failed to fetch model properties',
-            message: err.message 
+            message: err.message
         });
     }
+});
+
+// S3-based endpoint to fetch properties and legend for a given model name from S3 JSON files
+app.get('/api/modeldata/S3properties/:modelName', async (req, res) => {
+    try {
+        const modelName = req.params.modelName;
+        console.log(`Fetching S3 properties for model: ${modelName}`);
+
+        if (!s3) {
+            return res.status(500).json({ error: 'S3 not configured' });
+        }
+
+        // List all objects in the bucket to find matching _modelData.json files
+        const data = await s3.listObjectsV2({
+            Bucket: process.env.S3_BUCKET,
+            MaxKeys: 1000
+        }).promise();
+
+        // Find the corresponding _modelData.json file
+        // If modelName is "abc.rvt", look for files ending with "abc_modelData.json"
+        const baseModelName = modelName.replace(/\.(rvt|ifc|dwg)$/i, ''); // Remove common extensions
+
+        let jsonFile = null;
+
+        // Try different matching strategies
+        const matchingStrategies = [
+            // Exact match: modelName_modelData.json
+            (file) => file.Key.endsWith(`${modelName}_modelData.json`),
+            // Base name match: baseName_modelData.json
+            (file) => file.Key.endsWith(`${baseModelName}_modelData.json`),
+            // Case insensitive exact match
+            (file) => file.Key.toLowerCase().endsWith(`${modelName.toLowerCase()}_modeldata.json`),
+            // Case insensitive base name match
+            (file) => file.Key.toLowerCase().endsWith(`${baseModelName.toLowerCase()}_modeldata.json`),
+            // Partial match in filename
+            (file) => file.Key.toLowerCase().includes(baseModelName.toLowerCase()) && file.Key.endsWith('_modelData.json')
+        ];
+
+        for (const strategy of matchingStrategies) {
+            jsonFile = data.Contents.find(strategy);
+            if (jsonFile) {
+                console.log(`Found JSON file using strategy: ${jsonFile.Key}`);
+                break;
+            }
+        }
+
+        if (!jsonFile) {
+            console.log(`No _modelData.json file found for model: ${modelName}`);
+            console.log(`Searched for patterns: ${modelName}_modelData.json, ${baseModelName}_modelData.json`);
+
+            // List available JSON files for debugging
+            const availableJsonFiles = data.Contents
+                .filter(file => file.Key.endsWith('_modelData.json'))
+                .map(file => file.Key)
+                .slice(0, 10); // Show first 10 for debugging
+
+            return res.status(404).json({
+                error: 'Model data not found in S3',
+                message: `No _modelData.json file found for model: ${modelName}`,
+                searchedFor: modelName,
+                baseModelName: baseModelName,
+                availableJsonFiles: availableJsonFiles
+            });
+        }
+
+        console.log(`Downloading JSON file: ${jsonFile.Key}`);
+
+        // Download the JSON file from S3
+        const s3Object = await s3.getObject({
+            Bucket: process.env.S3_BUCKET,
+            Key: jsonFile.Key
+        }).promise();
+
+        // Parse the JSON content
+        const jsonContent = JSON.parse(s3Object.Body.toString());
+
+        console.log(`Successfully loaded model data from S3: ${jsonFile.Key}`);
+
+        // Return the same structure as the MongoDB endpoint
+        res.json({
+            properties: jsonContent.Properties,
+            legend: jsonContent.Legend,
+            treeView: jsonContent.TreeView,
+            modelId: jsonFile.Key, // Use S3 key as model ID
+            actualModelName: jsonContent.ProjectInfo?.Main?.ProjectInfor?.ModelName || modelName,
+            source: 'S3',
+            s3Key: jsonFile.Key,
+            fileSize: jsonFile.Size,
+            lastModified: jsonFile.LastModified
+        });
+
+    } catch (err) {
+        console.error('Error fetching S3 model properties:', err);
+        res.status(500).json({
+            error: 'Failed to fetch S3 model properties',
+            message: err.message,
+            name: err.name
+        });
+    }
+});
+
+// Test endpoint to manually upload sample model data for testing
+app.post('/api/modeldata/diagnostic/upload-test-data', async (req, res) => {
+    try {
+        const { modelName, modelGuid } = req.body;
+
+        if (!modelName) {
+            return res.status(400).json({ error: 'modelName is required' });
+        }
+
+        const testDoc = {
+            ProjectInfo: {
+                Main: {
+                    ProjectInfor: {
+                        ProjectId: "test-project-id",
+                        ProjectInfoUniqueId: "test-unique-id",
+                        ProjectExportedTime: new Date().toISOString(),
+                        ExportedBy: "Test\\User",
+                        DocumentPath: `C:\\TestPath\\${modelName}`,
+                        ModelName: modelName,
+                        ModelGuid: modelGuid || `test-guid-${Date.now()}`,
+                        BuildingName: "Test Building",
+                        Author: "Test Author",
+                        Address: "Test Address",
+                        ClientName: "Test Client",
+                        IssueDate: new Date().toISOString(),
+                        Units: "Metric"
+                    }
+                },
+                Links: {}
+            },
+            Properties: {
+                "test-element-1": {
+                    "Name": "Test Element 1",
+                    "Category": "Test Category",
+                    "Type": "Test Type"
+                },
+                "test-element-2": {
+                    "Name": "Test Element 2",
+                    "Category": "Test Category",
+                    "Type": "Test Type"
+                }
+            },
+            Legend: {
+                "1": {
+                    "name": "Test Category",
+                    "color": "#FF0000",
+                    "visible": true
+                }
+            },
+            TreeView: {
+                "Test Category": {
+                    "test-element-1": "Test Element 1",
+                    "test-element-2": "Test Element 2"
+                }
+            },
+            Guid: `test-doc-guid-${Date.now()}`
+        };
+
+        const result = await ModelData.create(testDoc);
+
+        res.json({
+            success: true,
+            message: `Test data uploaded successfully for model: ${modelName}`,
+            documentId: result._id,
+            modelName: modelName
+        });
+
+    } catch (err) {
+        console.error('Error uploading test data:', err);
+        res.status(500).json({
+            error: 'Failed to upload test data',
+            message: err.message
+        });
+    }
+});
+
+// Test endpoint to delete test data
+app.delete('/api/modeldata/diagnostic/delete-test-data/:modelName', async (req, res) => {
+    try {
+        const modelName = req.params.modelName;
+
+        const result = await ModelData.deleteMany({
+            "ProjectInfo.Main.ProjectInfor.ModelName": modelName
+        });
+
+        res.json({
+            success: true,
+            message: `Deleted ${result.deletedCount} documents for model: ${modelName}`,
+            deletedCount: result.deletedCount
+        });
+
+    } catch (err) {
+        console.error('Error deleting test data:', err);
+        res.status(500).json({
+            error: 'Failed to delete test data',
+            message: err.message
+        });
+    }
+});
+
+// Glasshouse API endpoints
+app.post('/api/glasshouse/login', async (req, res) => {
+    try {
+        const { email, password, server } = req.body;
+
+        if (!email || !password) {
+            return res.status(400).json({ error: 'Email and password are required' });
+        }
+
+        const glasshouseServer = server || 'app.glasshousebim.com';
+        const loginUrl = `https://${glasshouseServer}/api/v1/users/sign_in.json`;
+
+        console.log(`Attempting login to: ${loginUrl}`);
+        console.log(`Email: ${email}`);
+
+        // Make login request to Glasshouse API
+        const response = await axios.post(loginUrl,
+            `email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`,
+            {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Accept': 'application/json'
+                },
+                timeout: 10000 // 10 second timeout
+            }
+        );
+
+        console.log('Login response status:', response.status);
+        console.log('Login response data keys:', Object.keys(response.data || {}));
+
+        if (response.data && response.data.user && response.data.user.api_key) {
+            console.log('Login successful, API key obtained');
+            res.json({
+                success: true,
+                apiKey: response.data.user.api_key,
+                accessToken: response.data.access_token
+            });
+        } else {
+            console.log('Login failed: Invalid response structure');
+            res.status(401).json({ error: 'Invalid credentials or unexpected response format' });
+        }
+    } catch (error) {
+        console.error('Glasshouse login error details:');
+        console.error('- Message:', error.message);
+        console.error('- Status:', error.response?.status);
+        console.error('- Status Text:', error.response?.statusText);
+        console.error('- Response Data:', error.response?.data);
+        console.error('- Request URL:', error.config?.url);
+
+        res.status(401).json({
+            error: 'Authentication failed',
+            details: {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                responseData: error.response?.data
+            }
+        });
+    }
+});
+
+app.get('/api/glasshouse/user-info', async (req, res) => {
+    try {
+        // Try to get API key from both query params and headers (for flexibility)
+        const apiKey = req.query.apiKey || req.headers['access-token'] || req.headers['authorization'];
+        const server = req.query.server || 'app.glasshousebim.com';
+
+        if (!apiKey) {
+            return res.status(400).json({ error: 'API key is required (provide as query param apiKey or header access-token)' });
+        }
+
+        const glasshouseServer = server;
+        const userInfoUrl = `https://${glasshouseServer}/api/v1/users/info`;
+
+        console.log(`Making request to: ${userInfoUrl}`);
+        console.log(`Using API key: ${apiKey.substring(0, 10)}...`);
+
+        const response = await axios.get(userInfoUrl, {
+            headers: {
+                'access-token': apiKey,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            timeout: 10000 // 10 second timeout
+        });
+
+        console.log('User info response status:', response.status);
+        console.log('User info response data keys:', Object.keys(response.data));
+
+        // Extract pusher channel name from response
+        let channelName = '';
+        const data = response.data;
+
+        for (const key in data) {
+            if (key !== 'guid' && key !== 'type' && key !== 'disciplines' &&
+                key !== 'entry_status' && key !== 'specifications' && key !== 'bim_object_count') {
+                if (typeof data[key] === 'object' && data[key] && data[key].pusher_channel_name) {
+                    channelName = data[key].pusher_channel_name;
+                    console.log(`Found pusher channel name: ${channelName}`);
+                    break;
+                }
+            }
+        }
+
+        res.json({
+            success: true,
+            channelName: channelName,
+            userInfo: data
+        });
+    } catch (error) {
+        console.error('Get user info error details:');
+        console.error('- Message:', error.message);
+        console.error('- Status:', error.response?.status);
+        console.error('- Status Text:', error.response?.statusText);
+        console.error('- Response Data:', error.response?.data);
+        console.error('- Request URL:', error.config?.url);
+        console.error('- Request Headers:', error.config?.headers);
+
+        res.status(500).json({
+            error: 'Failed to get user info',
+            details: {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                responseData: error.response?.data
+            }
+        });
+    }
+});
+
+// Test connection endpoint - matches what C# code expects
+app.get('/api/glasshouse/test-connection', async (req, res) => {
+    try {
+        // Try to get API key from both query params and headers (for flexibility)
+        const apiKey = req.query.apiKey || req.headers['access-token'] || req.headers['authorization'];
+        const server = req.query.server || 'app.glasshousebim.com';
+
+        if (!apiKey) {
+            return res.status(400).json({
+                success: false,
+                error: 'API key is required (provide as query param apiKey or header access-token)'
+            });
+        }
+
+        const glasshouseServer = server;
+        const userInfoUrl = `https://${glasshouseServer}/api/v1/users/info`;
+
+        console.log(`Testing connection to: ${userInfoUrl}`);
+        console.log(`Using API key: ${apiKey.substring(0, 10)}...`);
+
+        const response = await axios.get(userInfoUrl, {
+            headers: {
+                'access-token': apiKey,
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+            },
+            timeout: 10000 // 10 second timeout
+        });
+
+        console.log('Test connection response status:', response.status);
+
+        if (response.status === 200 && response.data) {
+            res.json({
+                success: true,
+                message: 'Connection successful',
+                userInfo: response.data
+            });
+        } else {
+            res.status(500).json({
+                success: false,
+                error: 'Unexpected response from server'
+            });
+        }
+    } catch (error) {
+        console.error('Test connection error details:');
+        console.error('- Message:', error.message);
+        console.error('- Status:', error.response?.status);
+        console.error('- Status Text:', error.response?.statusText);
+        console.error('- Response Data:', error.response?.data);
+
+        res.status(500).json({
+            success: false,
+            error: 'Connection test failed',
+            details: {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                responseData: error.response?.data
+            }
+        });
+    }
+});
+
+app.get('/api/glasshouse/config', (req, res) => {
+    // Return Pusher configuration (keep sensitive data on server)
+    res.json({
+        pusherKey: process.env.PUSHER_KEY || '5e96c4cf2b1522a8f112',
+        pusherCluster: process.env.PUSHER_CLUSTER || 'eu'
+    });
+});
+
+// Test endpoints for Glasshouse Link testing
+app.post('/api/test/send-select', async (req, res) => {
+    try {
+        const { channel, guids } = req.body;
+
+        if (!channel || !guids || !Array.isArray(guids)) {
+            return res.status(400).json({ error: 'Channel and guids array are required' });
+        }
+
+        // Initialize Pusher for testing
+        const Pusher = require('pusher');
+        const pusher = new Pusher({
+            appId: process.env.PUSHER_APP_ID || '191919', // dummy app id
+            key: process.env.PUSHER_KEY || '5e5e5e5e5e5e', // dummy key
+            secret: process.env.PUSHER_SECRET || 'b8b8b8b8b8b8b8b8b8b8', // dummy secret
+            cluster: process.env.PUSHER_CLUSTER || 'eu',
+            useTLS: true
+        });
+
+        await pusher.trigger(channel, 'SelectEntries', {
+            data: JSON.stringify({ guids })
+        });
+
+        res.json({ success: true, message: 'Select message sent' });
+    } catch (error) {
+        console.error('Test send-select error:', error.message);
+        res.status(500).json({ error: 'Failed to send select message' });
+    }
+});
+
+app.post('/api/test/send-isolate', async (req, res) => {
+    try {
+        const { channel, guids } = req.body;
+
+        if (!channel || !guids || !Array.isArray(guids)) {
+            return res.status(400).json({ error: 'Channel and guids array are required' });
+        }
+
+        // Initialize Pusher for testing
+        const Pusher = require('pusher');
+        const pusher = new Pusher({
+            appId: process.env.PUSHER_APP_ID || '1906088',
+            key: process.env.PUSHER_KEY || '5e96c4cf2b1522a8f112',
+            secret: process.env.PUSHER_SECRET || 'b8b8b8b8b8b8b8b8b8b8',
+            cluster: process.env.PUSHER_CLUSTER || 'eu',
+            useTLS: true
+        });
+
+        await pusher.trigger(channel, 'IsolateEntries', {
+            data: JSON.stringify({ guids })
+        });
+
+        res.json({ success: true, message: 'Isolate message sent' });
+    } catch (error) {
+        console.error('Test send-isolate error:', error.message);
+        res.status(500).json({ error: 'Failed to send isolate message' });
+    }
+});
+
+// Get projects endpoint
+app.get('/api/glasshouse/projects', async (req, res) => {
+    try {
+        const apiKey = req.headers['access-token'];
+
+        if (!apiKey) {
+            return res.status(401).json({ error: 'API key required' });
+        }
+
+        console.log('Getting projects with API key:', apiKey.substring(0, 10) + '...');
+
+        const response = await axios.get('https://app.glasshousebim.com/api/v1/projects.json', {
+            headers: {
+                'access-token': apiKey,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log('Projects response status:', response.status);
+
+        res.json({
+            success: true,
+            projects: (response.data.projects || []).concat(response.data.invited_projects || [])
+        });
+
+    } catch (error) {
+        console.error('Error getting projects:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            error: error.response?.data?.error || error.message
+        });
+    }
+});
+
+// Get models for a project endpoint
+app.get('/api/glasshouse/projects/:projectId/models', async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const apiKey = req.headers['access-token'];
+
+        if (!apiKey) {
+            return res.status(401).json({ error: 'API key required' });
+        }
+
+        console.log(`Getting models for project ${projectId} with API key:`, apiKey.substring(0, 10) + '...');
+
+        const response = await axios.get(`https://app.glasshousebim.com/api/v1/projects/${projectId}/model_containers.json`, {
+            headers: {
+                'access-token': apiKey,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log('Models response status:', response.status);
+
+        res.json({
+            success: true,
+            models: response.data.model_containers || []
+        });
+
+    } catch (error) {
+        console.error('Error getting models:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            error: error.response?.data?.error || error.message
+        });
+    }
+});
+
+// Import project changes endpoint
+app.post('/api/glasshouse/import/project-changes', async (req, res) => {
+    try {
+        const { projectId, modelId } = req.body;
+        const apiKey = req.headers['access-token'];
+
+        if (!apiKey) {
+            return res.status(401).json({ error: 'API key required' });
+        }
+
+        if (!projectId) {
+            return res.status(400).json({ error: 'Project ID required' });
+        }
+
+        console.log(`Getting project changes for project ${projectId}, model ${modelId}`);
+
+        // Build URL exactly like the Revit plugin GetProjectChanges method
+        const { dateTimeFrom, dateTimeTo } = req.body;
+        let strRelativePath = `/audit_log/bim_object_changes/${projectId}`;
+
+        if (dateTimeFrom) {
+            const fromQuery = `from=${dateTimeFrom} UTC`;
+            let toQuery;
+            if (dateTimeTo) {
+                toQuery = `to=${dateTimeTo} UTC`;
+            } else {
+                const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+                toQuery = `to=${now} UTC`;
+            }
+            strRelativePath = `/audit_log/bim_object_changes/${projectId}?${fromQuery}&${toQuery}`;
+        }
+
+        const url = `https://app.glasshousebim.com/api/v1${strRelativePath}`;
+        console.log('GetProjectChanges URL:', url);
+
+        const response = await axios.get(url, {
+            headers: {
+                'access-token': apiKey,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log('Project changes response status:', response.status);
+
+        res.json({
+            success: true,
+            xmlContent: response.data
+        });
+
+    } catch (error) {
+        console.error('Error getting project changes:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            error: error.response?.data?.error || error.message
+        });
+    }
+});
+
+// Import BIM objects endpoint
+app.post('/api/glasshouse/import/bim-objects', async (req, res) => {
+    try {
+        const { projectId, modelId } = req.body;
+        const apiKey = req.headers['access-token'];
+
+        if (!apiKey) {
+            return res.status(401).json({ error: 'API key required' });
+        }
+
+        if (!projectId) {
+            return res.status(400).json({ error: 'Project ID required' });
+        }
+
+        if (!modelId) {
+            return res.status(400).json({ error: 'Project ID required' });
+        }
+
+        console.log(`Getting BIM objects for project ${projectId}, model ${modelId}`);
+
+        // Build URL exactly like the Revit plugin GetBimObjectLinks method
+        const { excludeEntriesWithoutObjects } = req.body;
+        const modelcontaining = modelId || "";
+        const exclude = excludeEntriesWithoutObjects ? "true" : "false";
+
+        const strRelativePath = `/projects/${projectId}/new_journal/entries/connected_bimobjects?model-containing=${modelcontaining}&exclude_entries_without_objects=${exclude}`;
+        const url = `https://app.glasshousebim.com/api/v1${strRelativePath}`;
+        console.log('GetBimObjectLinks URL:', url);
+
+        const response = await axios.get(url, {
+            headers: {
+                'access-token': apiKey,
+                'Content-Type': 'application/json'
+            },
+            timeout: 28000 // 28 second timeout as per Revit plugin
+        });
+
+        console.log('BIM objects response status:', response.status);
+
+        res.json({
+            success: true,
+            xmlContent: response.data
+        });
+
+    } catch (error) {
+        console.error('Error getting BIM objects:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            error: error.response?.data?.error || error.message
+        });
+    }
+});
+
+// API endpoint to store imported properties
+app.post('/api/glasshouse/imported-properties/:modelName', (req, res) => {
+    try {
+        const { modelName } = req.params;
+        const { properties } = req.body;
+
+        if (!properties || typeof properties !== 'object') {
+            return res.status(400).json({ error: 'Properties object required' });
+        }
+
+        // Store the imported properties for this model
+        importedProperties.set(modelName, new Map(Object.entries(properties)));
+
+        console.log(`Stored imported properties for model ${modelName}:`, Object.keys(properties).length, 'objects');
+
+        res.json({
+            success: true,
+            message: `Imported properties stored for model ${modelName}`,
+            objectCount: Object.keys(properties).length
+        });
+
+    } catch (error) {
+        console.error('Error storing imported properties:', error);
+        res.status(500).json({ error: 'Failed to store imported properties' });
+    }
+});
+
+// API endpoint to get imported properties
+app.get('/api/glasshouse/imported-properties/:modelName', (req, res) => {
+    try {
+        const { modelName } = req.params;
+
+        const modelProperties = importedProperties.get(modelName);
+        if (!modelProperties) {
+            return res.json({
+                success: true,
+                properties: {},
+                message: `No imported properties found for model ${modelName}`
+            });
+        }
+
+        // Convert Map back to object
+        const properties = Object.fromEntries(modelProperties);
+
+        res.json({
+            success: true,
+            properties: properties,
+            objectCount: Object.keys(properties).length
+        });
+
+    } catch (error) {
+        console.error('Error getting imported properties:', error);
+        res.status(500).json({ error: 'Failed to get imported properties' });
+    }
+});
+
+// API endpoint to get global project/model selection
+app.get('/api/glasshouse/global-selection', (req, res) => {
+    try {
+        res.json({
+            success: true,
+            selection: globalProjectModelSelection
+        });
+    } catch (error) {
+        console.error('Error getting global selection:', error);
+        res.status(500).json({ error: 'Failed to get global selection' });
+    }
+});
+
+// API endpoint to set global project/model selection
+app.post('/api/glasshouse/global-selection', (req, res) => {
+    try {
+        const { projectId, projectName, modelId, modelName } = req.body;
+
+        // Validate required fields
+        if (!projectId || !projectName || !modelId || !modelName) {
+            return res.status(400).json({
+                error: 'Missing required fields: projectId, projectName, modelId, modelName'
+            });
+        }
+
+        // Update global selection
+        globalProjectModelSelection = {
+            projectId,
+            projectName,
+            modelId,
+            modelName,
+            lastUpdated: new Date().toISOString()
+        };
+
+        console.log('Updated global project/model selection:', globalProjectModelSelection);
+
+        res.json({
+            success: true,
+            message: 'Global selection updated successfully',
+            selection: globalProjectModelSelection
+        });
+
+    } catch (error) {
+        console.error('Error setting global selection:', error);
+        res.status(500).json({ error: 'Failed to set global selection' });
+    }
+});
+
+// Serve test page for Glasshouse Link
+app.get('/test-glasshouse', (req, res) => {
+    res.sendFile(path.join(__dirname, 'test-glasshouse-link.html'));
 });
 
 // Serve index.html for the root route

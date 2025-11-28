@@ -374,6 +374,7 @@ export class ObjectContextMenu extends ContextMenu {
                     },
                     doAction: (context) => {
                         context.entity.selected = false;
+                        context.entity.highlighted = false;
                     }
                 },
                 {
@@ -382,7 +383,12 @@ export class ObjectContextMenu extends ContextMenu {
                         return context.viewer.scene.numSelectedObjects > 0;
                     },
                     doAction: (context) => {
-                        context.viewer.scene.setObjectsSelected(context.viewer.scene.selectedObjectIds, false);
+                        const scene = context.viewer.scene;
+                        const selectedIds = scene.selectedObjectIds.slice();
+                        const highlightedIds = scene.highlightedObjectIds.slice();
+
+                        scene.setObjectsSelected(selectedIds, false);
+                        scene.setObjectsHighlighted(highlightedIds, false);
                     }
                 }
             ]
@@ -461,7 +467,12 @@ export class CanvasContextMenu extends ContextMenu {
                         return context.viewer.scene.numSelectedObjects > 0;
                     },
                     doAction: (context) => {
-                        context.viewer.scene.setObjectsSelected(context.viewer.scene.selectedObjectIds, false);
+                        const scene = context.viewer.scene;
+                        const selectedIds = scene.selectedObjectIds.slice();
+                        const highlightedIds = scene.highlightedObjectIds.slice();
+
+                        scene.setObjectsSelected(selectedIds, false);
+                        scene.setObjectsHighlighted(highlightedIds, false);
                     }
                 }
             ],
