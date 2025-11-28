@@ -620,8 +620,17 @@ export class GlasshouseLinkTool extends Controller {
         const matchingObjects = this._findObjectsByParameter(parameterValues);
         
         if (matchingObjects.length > 0) {
-            // Clear current selection
-            this.viewer.scene.setObjectsSelected(this.viewer.scene.selectedObjectIds, false);
+            // Clear current selection and highlights
+            const scene = this.viewer.scene;
+            const selectedObjectIds = scene.selectedObjectIds.slice(); // Copy array
+            const highlightedObjectIds = scene.highlightedObjectIds.slice(); // Copy array
+
+            if (selectedObjectIds.length > 0) {
+                scene.setObjectsSelected(selectedObjectIds, false);
+            }
+            if (highlightedObjectIds.length > 0) {
+                scene.setObjectsHighlighted(highlightedObjectIds, false);
+            }
             
             // Select matching objects
             this.viewer.scene.setObjectsSelected(matchingObjects, true);
@@ -656,6 +665,18 @@ export class GlasshouseLinkTool extends Controller {
         const matchingObjects = this._findObjectsByParameter(parameterValues);
         
         if (matchingObjects.length > 0) {
+            // Clear current selection and highlights before isolating
+            const scene = this.viewer.scene;
+            const selectedObjectIds = scene.selectedObjectIds.slice(); // Copy array
+            const highlightedObjectIds = scene.highlightedObjectIds.slice(); // Copy array
+
+            if (selectedObjectIds.length > 0) {
+                scene.setObjectsSelected(selectedObjectIds, false);
+            }
+            if (highlightedObjectIds.length > 0) {
+                scene.setObjectsHighlighted(highlightedObjectIds, false);
+            }
+
             // Hide all objects first
             const allObjectIds = Object.keys(this.viewer.scene.objects);
             this.viewer.scene.setObjectsVisible(allObjectIds, false);
