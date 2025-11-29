@@ -29,7 +29,22 @@ export class GlasshouseLinkTool extends Controller {
         // Object matching configuration
         //this._parameterName = 'GlassHouseJournalGUID'; // Default parameter to match
         this._parameterName = 'UniqueIdPara'; // Default parameter to match
-        
+
+        // Pagination support for multi-page messages
+        this._pendingSelectObjectGuids = [];
+        this._pendingIsolateObjectGuids = [];
+        this._pendingSelectEntryGuids = [];
+        this._pendingIsolateEntryGuids = [];
+        this._pendingSelectObjectTotal = 0;
+        this._pendingIsolateObjectTotal = 0;
+        this._pendingSelectEntryTotal = 0;
+        this._pendingIsolateEntryTotal = 0;
+        this._selectObjectTimeout = null;
+        this._isolateObjectTimeout = null;
+        this._selectEntryTimeout = null;
+        this._isolateEntryTimeout = null;
+        this._paginationTimeoutMs = 30000; // 30 second timeout for waiting for all pages
+
         this._initEvents();
         this._loadPusherConfig();
         this._updateStatusDot(); // Initialize status dot
@@ -272,18 +287,70 @@ export class GlasshouseLinkTool extends Controller {
 
         try {
             const guids = this._extractGuids(data);
-            if (guids.length > 0) {
-                // Set parameter name to GlassHouseJournalGUID for entries
-                const originalParameterName = this._parameterName;
-                this._parameterName = 'GlassHouseJournalGUID';
-                this._selectObjectsByParameter(guids);
-                this._parameterName = originalParameterName; // Restore original
+            const messageNo = data.message_no || 1;
+            const totalMessages = data.total_messages || 1;
+
+            console.log(`SelectEntries: page ${messageNo} of ${totalMessages}, received ${guids.length} guids`);
+
+            // If single message (no pagination), execute immediately
+            if (totalMessages === 1) {
+                if (guids.length > 0) {
+                    const originalParameterName = this._parameterName;
+                    this._parameterName = 'GlassHouseJournalGUID';
+                    this._selectObjectsByParameter(guids);
+                    this._parameterName = originalParameterName;
+                } else {
+                    console.warn('No objects found to select');
+                }
+                return;
             }
-            else {
-                console.warn('No objects found to select');
+
+            // Multi-page message handling
+            if (messageNo === 1) {
+                // First page - reset accumulator and start timeout
+                this._pendingSelectEntryGuids = [];
+                this._pendingSelectEntryTotal = totalMessages;
+
+                if (this._selectEntryTimeout) {
+                    clearTimeout(this._selectEntryTimeout);
+                }
+
+                this._selectEntryTimeout = setTimeout(() => {
+                    console.warn('SelectEntries pagination timeout - executing with partial data');
+                    this._executeSelectEntries();
+                }, this._paginationTimeoutMs);
+            }
+
+            // Accumulate GUIDs from this page
+            this._pendingSelectEntryGuids.push(...guids);
+            console.log(`SelectEntries: accumulated ${this._pendingSelectEntryGuids.length} guids so far`);
+
+            // Check if this is the last page
+            if (messageNo === totalMessages) {
+                console.log(`SelectEntries: received all ${totalMessages} pages, executing...`);
+                if (this._selectEntryTimeout) {
+                    clearTimeout(this._selectEntryTimeout);
+                    this._selectEntryTimeout = null;
+                }
+                this._executeSelectEntries();
             }
         } catch (error) {
             console.error('Error handling SelectEntries:', error);
+        }
+    }
+
+    _executeSelectEntries() {
+        const guids = this._pendingSelectEntryGuids;
+        this._pendingSelectEntryGuids = [];
+        this._pendingSelectEntryTotal = 0;
+
+        if (guids.length > 0) {
+            const originalParameterName = this._parameterName;
+            this._parameterName = 'GlassHouseJournalGUID';
+            this._selectObjectsByParameter(guids);
+            this._parameterName = originalParameterName;
+        } else {
+            console.warn('No objects found to select');
         }
     }
 
@@ -295,18 +362,70 @@ export class GlasshouseLinkTool extends Controller {
 
         try {
             const guids = this._extractGuids(data);
-            if (guids.length > 0) {
-                // Set parameter name to GlassHouseJournalGUID for entries
-                const originalParameterName = this._parameterName;
-                this._parameterName = 'GlassHouseJournalGUID';
-                this._isolateObjectsByParameter(guids);
-                this._parameterName = originalParameterName; // Restore original
+            const messageNo = data.message_no || 1;
+            const totalMessages = data.total_messages || 1;
+
+            console.log(`IsolateEntries: page ${messageNo} of ${totalMessages}, received ${guids.length} guids`);
+
+            // If single message (no pagination), execute immediately
+            if (totalMessages === 1) {
+                if (guids.length > 0) {
+                    const originalParameterName = this._parameterName;
+                    this._parameterName = 'GlassHouseJournalGUID';
+                    this._isolateObjectsByParameter(guids);
+                    this._parameterName = originalParameterName;
+                } else {
+                    console.warn('No objects found to isolate');
+                }
+                return;
             }
-            else {
-                console.warn('No objects found to isolate');
+
+            // Multi-page message handling
+            if (messageNo === 1) {
+                // First page - reset accumulator and start timeout
+                this._pendingIsolateEntryGuids = [];
+                this._pendingIsolateEntryTotal = totalMessages;
+
+                if (this._isolateEntryTimeout) {
+                    clearTimeout(this._isolateEntryTimeout);
+                }
+
+                this._isolateEntryTimeout = setTimeout(() => {
+                    console.warn('IsolateEntries pagination timeout - executing with partial data');
+                    this._executeIsolateEntries();
+                }, this._paginationTimeoutMs);
+            }
+
+            // Accumulate GUIDs from this page
+            this._pendingIsolateEntryGuids.push(...guids);
+            console.log(`IsolateEntries: accumulated ${this._pendingIsolateEntryGuids.length} guids so far`);
+
+            // Check if this is the last page
+            if (messageNo === totalMessages) {
+                console.log(`IsolateEntries: received all ${totalMessages} pages, executing...`);
+                if (this._isolateEntryTimeout) {
+                    clearTimeout(this._isolateEntryTimeout);
+                    this._isolateEntryTimeout = null;
+                }
+                this._executeIsolateEntries();
             }
         } catch (error) {
             console.error('Error handling IsolateEntries:', error);
+        }
+    }
+
+    _executeIsolateEntries() {
+        const guids = this._pendingIsolateEntryGuids;
+        this._pendingIsolateEntryGuids = [];
+        this._pendingIsolateEntryTotal = 0;
+
+        if (guids.length > 0) {
+            const originalParameterName = this._parameterName;
+            this._parameterName = 'GlassHouseJournalGUID';
+            this._isolateObjectsByParameter(guids);
+            this._parameterName = originalParameterName;
+        } else {
+            console.warn('No objects found to isolate');
         }
     }
 
@@ -318,18 +437,70 @@ export class GlasshouseLinkTool extends Controller {
 
         try {
             const guids = this._extracObjectGuids(data);
-            if (guids.length > 0) {
-                // Set parameter name to UniqueIdPara for objects
-                const originalParameterName = this._parameterName;
-                this._parameterName = 'UniqueIdPara';
-                this._selectObjectsByParameter(guids);
-                this._parameterName = originalParameterName; // Restore original
+            const messageNo = data.message_no || 1;
+            const totalMessages = data.total_messages || 1;
+
+            console.log(`SelectObjects: page ${messageNo} of ${totalMessages}, received ${guids.length} guids`);
+
+            // If single message (no pagination), execute immediately
+            if (totalMessages === 1) {
+                if (guids.length > 0) {
+                    const originalParameterName = this._parameterName;
+                    this._parameterName = 'UniqueIdPara';
+                    this._selectObjectsByParameter(guids);
+                    this._parameterName = originalParameterName;
+                } else {
+                    console.warn('No objects found to select');
+                }
+                return;
             }
-            else {
-                console.warn('No objects found to select');
+
+            // Multi-page message handling
+            if (messageNo === 1) {
+                // First page - reset accumulator and start timeout
+                this._pendingSelectObjectGuids = [];
+                this._pendingSelectObjectTotal = totalMessages;
+
+                if (this._selectObjectTimeout) {
+                    clearTimeout(this._selectObjectTimeout);
+                }
+
+                this._selectObjectTimeout = setTimeout(() => {
+                    console.warn('SelectObjects pagination timeout - executing with partial data');
+                    this._executeSelectObjects();
+                }, this._paginationTimeoutMs);
+            }
+
+            // Accumulate GUIDs from this page
+            this._pendingSelectObjectGuids.push(...guids);
+            console.log(`SelectObjects: accumulated ${this._pendingSelectObjectGuids.length} guids so far`);
+
+            // Check if this is the last page
+            if (messageNo === totalMessages) {
+                console.log(`SelectObjects: received all ${totalMessages} pages, executing...`);
+                if (this._selectObjectTimeout) {
+                    clearTimeout(this._selectObjectTimeout);
+                    this._selectObjectTimeout = null;
+                }
+                this._executeSelectObjects();
             }
         } catch (error) {
-            console.error('Error handling SelectEntries:', error);
+            console.error('Error handling SelectObjects:', error);
+        }
+    }
+
+    _executeSelectObjects() {
+        const guids = this._pendingSelectObjectGuids;
+        this._pendingSelectObjectGuids = [];
+        this._pendingSelectObjectTotal = 0;
+
+        if (guids.length > 0) {
+            const originalParameterName = this._parameterName;
+            this._parameterName = 'UniqueIdPara';
+            this._selectObjectsByParameter(guids);
+            this._parameterName = originalParameterName;
+        } else {
+            console.warn('No objects found to select');
         }
     }
 
@@ -341,18 +512,70 @@ export class GlasshouseLinkTool extends Controller {
 
         try {
             const guids = this._extracObjectGuids(data);
-            if (guids.length > 0) {
-                // Set parameter name to UniqueIdPara for objects
-                const originalParameterName = this._parameterName;
-                this._parameterName = 'UniqueIdPara';
-                this._isolateObjectsByParameter(guids);
-                this._parameterName = originalParameterName; // Restore original
+            const messageNo = data.message_no || 1;
+            const totalMessages = data.total_messages || 1;
+
+            console.log(`IsolateObjects: page ${messageNo} of ${totalMessages}, received ${guids.length} guids`);
+
+            // If single message (no pagination), execute immediately
+            if (totalMessages === 1) {
+                if (guids.length > 0) {
+                    const originalParameterName = this._parameterName;
+                    this._parameterName = 'UniqueIdPara';
+                    this._isolateObjectsByParameter(guids);
+                    this._parameterName = originalParameterName;
+                } else {
+                    console.warn('No objects found to isolate');
+                }
+                return;
             }
-            else {
-                console.warn('No objects found to isolate');
+
+            // Multi-page message handling
+            if (messageNo === 1) {
+                // First page - reset accumulator and start timeout
+                this._pendingIsolateObjectGuids = [];
+                this._pendingIsolateObjectTotal = totalMessages;
+
+                if (this._isolateObjectTimeout) {
+                    clearTimeout(this._isolateObjectTimeout);
+                }
+
+                this._isolateObjectTimeout = setTimeout(() => {
+                    console.warn('IsolateObjects pagination timeout - executing with partial data');
+                    this._executeIsolateObjects();
+                }, this._paginationTimeoutMs);
+            }
+
+            // Accumulate GUIDs from this page
+            this._pendingIsolateObjectGuids.push(...guids);
+            console.log(`IsolateObjects: accumulated ${this._pendingIsolateObjectGuids.length} guids so far`);
+
+            // Check if this is the last page
+            if (messageNo === totalMessages) {
+                console.log(`IsolateObjects: received all ${totalMessages} pages, executing...`);
+                if (this._isolateObjectTimeout) {
+                    clearTimeout(this._isolateObjectTimeout);
+                    this._isolateObjectTimeout = null;
+                }
+                this._executeIsolateObjects();
             }
         } catch (error) {
             console.error('Error handling IsolateObjects:', error);
+        }
+    }
+
+    _executeIsolateObjects() {
+        const guids = this._pendingIsolateObjectGuids;
+        this._pendingIsolateObjectGuids = [];
+        this._pendingIsolateObjectTotal = 0;
+
+        if (guids.length > 0) {
+            const originalParameterName = this._parameterName;
+            this._parameterName = 'UniqueIdPara';
+            this._isolateObjectsByParameter(guids);
+            this._parameterName = originalParameterName;
+        } else {
+            console.warn('No objects found to isolate');
         }
     }
 
@@ -397,16 +620,44 @@ export class GlasshouseLinkTool extends Controller {
         const matchingObjects = this._findObjectsByParameter(parameterValues);
         
         if (matchingObjects.length > 0) {
-            // Clear current selection
-            this.viewer.scene.setObjectsSelected(this.viewer.scene.selectedObjectIds, false);
+            // Clear current selection and highlights
+            const scene = this.viewer.scene;
+            const selectedObjectIds = scene.selectedObjectIds.slice(); // Copy array
+            const highlightedObjectIds = scene.highlightedObjectIds.slice(); // Copy array
+
+            if (selectedObjectIds.length > 0) {
+                scene.setObjectsSelected(selectedObjectIds, false);
+            }
+            if (highlightedObjectIds.length > 0) {
+                scene.setObjectsHighlighted(highlightedObjectIds, false);
+            }
             
             // Select matching objects
             this.viewer.scene.setObjectsSelected(matchingObjects, true);
             this.viewer.scene.setObjectsHighlighted(matchingObjects, true);
             
+            // Update metadata panel to show properties for selected objects
+            // Show metadata for the first selected object (or all if single selection)
+            if (matchingObjects.length === 1) {
+                const objectId = matchingObjects[0];
+                const entity = this.viewer.scene.objects[objectId];
+                if (entity) {
+                    this._showMetadataForObject(entity);
+                }
+            } else if (matchingObjects.length > 1) {
+                // For multiple objects, show metadata for the first one
+                const objectId = matchingObjects[0];
+                const entity = this.viewer.scene.objects[objectId];
+                if (entity) {
+                    this._showMetadataForObject(entity);
+                }
+            }
+            
             console.log(`Selected ${matchingObjects.length} objects by ${this._parameterName}`);
         } else {
             console.warn(`No objects found with ${this._parameterName} values:`, parameterValues);
+            // Clear metadata when no objects are found
+            this._clearMetadata();
         }
     }
 
@@ -414,6 +665,18 @@ export class GlasshouseLinkTool extends Controller {
         const matchingObjects = this._findObjectsByParameter(parameterValues);
         
         if (matchingObjects.length > 0) {
+            // Clear current selection and highlights before isolating
+            const scene = this.viewer.scene;
+            const selectedObjectIds = scene.selectedObjectIds.slice(); // Copy array
+            const highlightedObjectIds = scene.highlightedObjectIds.slice(); // Copy array
+
+            if (selectedObjectIds.length > 0) {
+                scene.setObjectsSelected(selectedObjectIds, false);
+            }
+            if (highlightedObjectIds.length > 0) {
+                scene.setObjectsHighlighted(highlightedObjectIds, false);
+            }
+
             // Hide all objects first
             const allObjectIds = Object.keys(this.viewer.scene.objects);
             this.viewer.scene.setObjectsVisible(allObjectIds, false);
@@ -423,9 +686,28 @@ export class GlasshouseLinkTool extends Controller {
             this.viewer.scene.setObjectsSelected(matchingObjects, true);
             this.viewer.scene.setObjectsHighlighted(matchingObjects, true);
             
+            // Update metadata panel to show properties for isolated objects
+            // Show metadata for the first isolated object (or all if single selection)
+            if (matchingObjects.length === 1) {
+                const objectId = matchingObjects[0];
+                const entity = this.viewer.scene.objects[objectId];
+                if (entity) {
+                    this._showMetadataForObject(entity);
+                }
+            } else if (matchingObjects.length > 1) {
+                // For multiple objects, show metadata for the first one
+                const objectId = matchingObjects[0];
+                const entity = this.viewer.scene.objects[objectId];
+                if (entity) {
+                    this._showMetadataForObject(entity);
+                }
+            }
+            
             console.log(`Isolated ${matchingObjects.length} objects by ${this._parameterName}`);
         } else {
             console.warn(`No objects found with ${this._parameterName} values:`, parameterValues);
+            // Clear metadata when no objects are found
+            this._clearMetadata();
         }
     }
 
@@ -511,6 +793,92 @@ export class GlasshouseLinkTool extends Controller {
         // Property not found
         console.warn(`Property '${propertyName}' not found for element ID: ${elementId}`);
         return null;
+    }
+
+    /**
+     * Show metadata for a selected object
+     */
+    _showMetadataForObject(entity) {
+        // Expand metadata window if collapsed
+        const metadataBox = document.getElementById('metadataBox');
+        if (metadataBox && metadataBox.classList.contains('collapsed')) {
+            metadataBox.classList.remove('collapsed');
+        }
+
+        // Access global variables from viewer.js
+        if (typeof window.modelProperties === 'undefined' || typeof window.modelLegend === 'undefined') {
+            console.log('Model properties or legend not available');
+            this._showBasicMetadata(entity);
+            return;
+        }
+
+        const metadataTable = document.querySelector('#metadataTable tbody');
+        if (!metadataTable) {
+            console.warn('Metadata table not found');
+            return;
+        }
+        metadataTable.innerHTML = '';
+
+        // Extract elementId from entity.id (e.g., Surface[105545] => 105545)
+        const match = entity.id.match(/\[(\d+)\]/);
+        const elementId = match ? match[1] : null;
+
+        if (elementId && window.modelProperties[elementId]) {
+            const props = window.modelProperties[elementId];
+            console.log('Showing metadata for selected object:', entity.id);
+
+            // Map property indices to names using legend
+            Object.entries(props).forEach(([key, value]) => {
+                let propName = key;
+                if (window.modelLegend[key] && window.modelLegend[key].Name) {
+                    propName = window.modelLegend[key].Name;
+                }
+                let displayValue;
+                if (value !== null && typeof value === 'object') {
+                    displayValue = JSON.stringify(value);
+                } else {
+                    displayValue = value;
+                }
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${propName}</td>
+                    <td>${displayValue}</td>
+                `;
+                metadataTable.appendChild(row);
+            });
+        } else {
+            this._showBasicMetadata(entity);
+        }
+    }
+
+    /**
+     * Show basic metadata when detailed properties aren't available
+     */
+    _showBasicMetadata(entity) {
+        const metadataTable = document.querySelector('#metadataTable tbody');
+        if (!metadataTable) {
+            console.warn('Metadata table not found');
+            return;
+        }
+        metadataTable.innerHTML = '';
+
+        const idRow = document.createElement('tr');
+        idRow.innerHTML = `
+            <td>ID</td>
+            <td>${entity.id}</td>
+        `;
+        metadataTable.appendChild(idRow);
+    }
+
+    /**
+     * Clear metadata display
+     */
+    _clearMetadata() {
+        const metadataTable = document.querySelector('#metadataTable tbody');
+        if (metadataTable) {
+            metadataTable.innerHTML = '';
+            console.log('Metadata cleared');
+        }
     }
 
     _disconnect() {
