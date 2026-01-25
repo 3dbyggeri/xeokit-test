@@ -29,8 +29,163 @@ export class ModelsManager {
             } else if (e.target.classList.contains('xeokit-unloadAllModels')) {
                 e.preventDefault();
                 this.unloadAllModels();
+            } else if (e.target.classList.contains('xeokit-uploadModel')) {
+                e.preventDefault();
+                this.handleUploadClick();
+            } else if (e.target.classList.contains('xeokit-deleteModel')) {
+                e.preventDefault();
+                this.handleDeleteClick();
             }
         });
+
+        // Listen for tab changes to update button visibility
+        this._setupTabVisibilityListener();
+    }
+
+    _setupTabVisibilityListener() {
+        // Monitor tab switches to show/hide buttons
+        const checkTabVisibility = () => {
+            const treeView = window.treeView;
+            if (treeView) {
+                const isModelsTab = treeView.currentTab === 'models';
+                const uploadBtn = document.querySelector('.xeokit-uploadModel');
+                const deleteBtn = document.querySelector('.xeokit-deleteModel');
+                
+                if (uploadBtn) {
+                    uploadBtn.style.display = isModelsTab ? '' : 'none';
+                }
+                if (deleteBtn) {
+                    deleteBtn.style.display = isModelsTab ? '' : 'none';
+                }
+            }
+        };
+
+        // Check initially
+        setTimeout(checkTabVisibility, 100);
+
+        // Check periodically (in case tab changes externally)
+        setInterval(checkTabVisibility, 500);
+    }
+
+    handleUploadClick() {
+        // This will be handled by UploadTool
+        if (window.uploadTool) {
+            window.uploadTool.openModal();
+        }
+    }
+
+    handleDeleteClick() {
+        const treeView = window.treeView;
+        if (!treeView || treeView.currentTab !== 'models') {
+            console.warn('Delete only available in Models tab');
+            return;
+        }
+
+        // Get selected models (checked checkboxes)
+        const selectedModels = this.getSelectedModels();
+        
+        if (selectedModels.length === 0) {
+            alert('Please select at least one model to delete.');
+            return;
+        }
+
+        // Show access code modal first
+        if (window.uploadTool) {
+            window.uploadTool.openModal(() => {
+                // This callback runs after access code is validated
+                this.performDelete(selectedModels);
+            });
+        } else {
+            // Fallback if uploadTool not available
+            this.performDelete(selectedModels);
+        }
+    }
+
+    async performDelete(selectedModels) {
+        const treeView = window.treeView;
+        
+        // Confirm deletion
+        const confirmMessage = `Are you sure you want to delete ${selectedModels.length} model(s) and all associated files?`;
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+
+        // Store model IDs that are loaded and will be deleted
+        const modelIdsToUnload = selectedModels
+            .filter(model => this.loadedModels.has(model.id))
+            .map(model => model.id);
+
+        // Extract base names from selected models
+        const baseNames = selectedModels.map(model => {
+            // Extract base name without extension (e.g., "abc.rvt" -> "abc")
+            const name = model.name || model.label || '';
+            const lastDot = name.lastIndexOf('.');
+            return lastDot > 0 ? name.substring(0, lastDot) : name;
+        });
+
+        try {
+            const response = await fetch('/api/modeldata/delete', {
+                method: 'DELETE',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ baseNames })
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                // Unload deleted models from viewer
+                for (const modelId of modelIdsToUnload) {
+                    this.unloadModel(modelId);
+                }
+
+                // Refresh models list
+                await this.fetchModels();
+                
+                // Refresh tree view
+                if (treeView) {
+                    treeView.buildTree();
+                }
+
+                alert(`Successfully deleted ${result.deletedCount || 0} file(s).`);
+            } else {
+                alert(`Error deleting files: ${result.error || 'Unknown error'}`);
+            }
+        } catch (error) {
+            console.error('Error deleting models:', error);
+            alert('Error deleting models. Please try again.');
+        }
+    }
+
+    getSelectedModels() {
+        const treeView = window.treeView;
+        if (!treeView || treeView.currentTab !== 'models') {
+            return [];
+        }
+
+        // Find all checked checkboxes in the models tree
+        const checkedBoxes = document.querySelectorAll('.xeokit-modelsTab .tree-visibility-checkbox:checked');
+        const selectedModels = [];
+
+        checkedBoxes.forEach(checkbox => {
+            const nodeElement = checkbox.closest('[data-node-id]');
+            if (nodeElement) {
+                const nodeId = nodeElement.dataset.nodeId;
+                // Find the model in modelsData
+                const model = this.modelsData.find(m => m.id === nodeId);
+                if (model) {
+                    selectedModels.push({
+                        id: model.id,
+                        name: model.name,
+                        label: model.name,
+                        key: model.key
+                    });
+                }
+            }
+        });
+
+        return selectedModels;
     }
 
     async fetchModels() {
