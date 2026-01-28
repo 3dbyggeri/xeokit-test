@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const axios = require('axios');
+const multer = require('multer');
 
 // Load environment variables - try config.env first, then .env
 require('dotenv').config({ path: './wwwroot/config.env' });
@@ -45,6 +46,9 @@ app.use('/node_modules', express.static(path.join(__dirname, 'node_modules')));
 
 // Serve other static files from root directory for compatibility
 app.use(express.static(__dirname));
+
+// Configure multer for file uploads (memory storage)
+const upload = multer({ storage: multer.memoryStorage() });
 
 // Initialize mongoose if MongoDB URI is available
 let Project, Model;
@@ -117,6 +121,20 @@ if (process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY) {
 }
 
 // API Routes
+
+// Get access code from environment variables
+app.get('/api/modeldata/access-code', (req, res) => {
+    try {
+        const accessCode = process.env.Model_Access_Code || process.env.MODEL_ACCESS_CODE;
+        if (!accessCode) {
+            return res.status(500).json({ error: 'Access code not configured' });
+        }
+        res.json({ accessCode });
+    } catch (error) {
+        console.error('Error getting access code:', error);
+        res.status(500).json({ error: 'Failed to get access code' });
+    }
+});
 
 // Get all projects
 app.get('/api/modeldata/projects', async (req, res) => {
@@ -254,6 +272,125 @@ app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
     } catch (error) {
         console.error('Error fetching XKT file:', error);
         res.status(500).json({ error: 'Error fetching XKT file' });
+    }
+});
+
+// Upload file endpoint
+app.post('/api/modeldata/upload', upload.single('file'), async (req, res) => {
+    try {
+        if (!s3) {
+            return res.status(500).json({ error: 'S3 not configured' });
+        }
+
+        if (!req.file) {
+            return res.status(400).json({ error: 'No file provided' });
+        }
+
+        const file = req.file;
+        const fileName = file.originalname;
+        
+        // Determine S3 key - use the same structure as existing files
+        // Check if file is .xkt, put in root or models folder, otherwise put in uploads
+        let s3Key;
+        if (fileName.endsWith('.xkt')) {
+            s3Key = fileName; // Put .xkt files in root or models folder
+        } else {
+            s3Key = `uploads/${fileName}`;
+        }
+
+        // Upload to S3
+        const uploadParams = {
+            Bucket: process.env.S3_BUCKET,
+            Key: s3Key,
+            Body: file.buffer,
+            ContentType: file.mimetype || 'application/octet-stream'
+        };
+
+        await s3.upload(uploadParams).promise();
+
+        console.log(`File uploaded successfully: ${s3Key}`);
+
+        res.json({
+            success: true,
+            message: 'File uploaded successfully',
+            fileName: fileName,
+            key: s3Key,
+            url: `/api/modeldata/xkt/${encodeURIComponent(s3Key)}`
+        });
+
+    } catch (error) {
+        console.error('Error uploading file:', error);
+        res.status(500).json({ error: 'Failed to upload file', message: error.message });
+    }
+});
+
+// Delete files endpoint
+app.delete('/api/modeldata/delete', async (req, res) => {
+    try {
+        if (!s3) {
+            return res.status(500).json({ error: 'S3 not configured' });
+        }
+
+        const { baseNames } = req.body;
+
+        if (!baseNames || !Array.isArray(baseNames) || baseNames.length === 0) {
+            return res.status(400).json({ error: 'baseNames array is required' });
+        }
+
+        // List all objects in the bucket
+        const listParams = {
+            Bucket: process.env.S3_BUCKET,
+            MaxKeys: 10000
+        };
+
+        const data = await s3.listObjectsV2(listParams).promise();
+        const allFiles = data.Contents || [];
+
+        // Find all files matching any of the base names (any extension)
+        const filesToDelete = [];
+        baseNames.forEach(baseName => {
+            allFiles.forEach(file => {
+                const fileName = file.Key.split('/').pop(); // Get filename without path
+                const lastDot = fileName.lastIndexOf('.');
+                const fileBaseName = lastDot > 0 ? fileName.substring(0, lastDot) : fileName;
+                
+                // Match if base name matches (case-insensitive)
+                if (fileBaseName.toLowerCase() === baseName.toLowerCase()) {
+                    filesToDelete.push(file.Key);
+                }
+            });
+        });
+
+        if (filesToDelete.length === 0) {
+            return res.json({
+                success: true,
+                message: 'No matching files found to delete',
+                deletedCount: 0
+            });
+        }
+
+        // Delete all matching files
+        const deletePromises = filesToDelete.map(key => {
+            return s3.deleteObject({
+                Bucket: process.env.S3_BUCKET,
+                Key: key
+            }).promise();
+        });
+
+        await Promise.all(deletePromises);
+
+        console.log(`Deleted ${filesToDelete.length} file(s):`, filesToDelete);
+
+        res.json({
+            success: true,
+            message: `Successfully deleted ${filesToDelete.length} file(s)`,
+            deletedCount: filesToDelete.length,
+            deletedFiles: filesToDelete
+        });
+
+    } catch (error) {
+        console.error('Error deleting files:', error);
+        res.status(500).json({ error: 'Failed to delete files', message: error.message });
     }
 });
 

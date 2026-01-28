@@ -4,6 +4,7 @@ import { Toolbar } from "./toolbar/Toolbar.js";
 import { TreeView } from "./treeview/TreeView.js";
 import { ModelsManager } from "./models/ModelsManager.js";
 import { ObjectContextMenu, CanvasContextMenu } from "./contextmenu/ContextMenu.js";
+import { UploadTool } from "./upload/UploadTool.js";
 
 // Initialize viewer
 const viewer = new Viewer({
@@ -111,6 +112,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Make treeView available globally for ModelsManager
     window.treeView = treeView;
+
+    // Initialize UploadTool
+    const uploadTool = new UploadTool(modelsManager);
+    window.uploadTool = uploadTool;
+
+    // Ensure buttons are visible on initial load
+    setTimeout(() => {
+        treeView._updateUploadDeleteButtonsVisibility();
+    }, 100);
 });
 
 // Initialize context menus

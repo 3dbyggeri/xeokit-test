@@ -99,6 +99,22 @@ export class TreeView {
 
         // Ensure buttons are enabled after tab switch
         this._ensureButtonsEnabled();
+
+        // Update Upload/Delete button visibility
+        this._updateUploadDeleteButtonsVisibility();
+    }
+
+    _updateUploadDeleteButtonsVisibility() {
+        const isModelsTab = this.currentTab === 'models';
+        const uploadBtn = document.querySelector('.xeokit-uploadModel');
+        const deleteBtn = document.querySelector('.xeokit-deleteModel');
+        
+        if (uploadBtn) {
+            uploadBtn.style.display = isModelsTab ? '' : 'none';
+        }
+        if (deleteBtn) {
+            deleteBtn.style.display = isModelsTab ? '' : 'none';
+        }
     }
 
 
