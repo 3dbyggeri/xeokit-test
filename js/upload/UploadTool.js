@@ -4,8 +4,28 @@
 export class UploadTool {
     constructor(modelsManager) {
         this.modelsManager = modelsManager;
-        this.accessCode = "123654"; // Hardcoded access code
+        this.accessCode = null; // Will be loaded from server
         this._initModal();
+        this._loadAccessCode();
+    }
+
+    async _loadAccessCode() {
+        try {
+            const response = await fetch('/api/modeldata/access-code');
+            if (response.ok) {
+                const data = await response.json();
+                this.accessCode = data.accessCode;
+                console.log('Access code loaded from server');
+            } else {
+                console.error('Failed to load access code from server');
+                // Fallback to empty string to prevent access
+                this.accessCode = '';
+            }
+        } catch (error) {
+            console.error('Error loading access code:', error);
+            // Fallback to empty string to prevent access
+            this.accessCode = '';
+        }
     }
 
     _initModal() {
@@ -52,7 +72,7 @@ export class UploadTool {
         }
     }
 
-    validateAndProceed() {
+    async validateAndProceed() {
         const input = document.getElementById('accessCodeInput');
         const errorDiv = document.getElementById('accessCodeError');
         const modal = document.getElementById('accessCodeModal');
@@ -62,7 +82,21 @@ export class UploadTool {
             return;
         }
 
+        // Ensure access code is loaded
+        if (this.accessCode === null) {
+            errorDiv.textContent = 'Loading access code...';
+            errorDiv.style.display = 'block';
+            await this._loadAccessCode();
+            errorDiv.style.display = 'none';
+        }
+
         const enteredCode = input.value.trim();
+
+        if (!this.accessCode) {
+            errorDiv.textContent = 'Access code not configured. Please contact administrator.';
+            errorDiv.style.display = 'block';
+            return;
+        }
 
         if (enteredCode === this.accessCode) {
             // Access granted - close modal

@@ -122,6 +122,20 @@ if (process.env.S3_ACCESS_KEY && process.env.S3_SECRET_KEY) {
 
 // API Routes
 
+// Get access code from environment variables
+app.get('/api/modeldata/access-code', (req, res) => {
+    try {
+        const accessCode = process.env.Model_Access_Code || process.env.MODEL_ACCESS_CODE;
+        if (!accessCode) {
+            return res.status(500).json({ error: 'Access code not configured' });
+        }
+        res.json({ accessCode });
+    } catch (error) {
+        console.error('Error getting access code:', error);
+        res.status(500).json({ error: 'Failed to get access code' });
+    }
+});
+
 // Get all projects
 app.get('/api/modeldata/projects', async (req, res) => {
     try {
