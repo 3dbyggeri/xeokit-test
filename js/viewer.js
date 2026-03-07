@@ -93,6 +93,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Fetch models data
     await modelsManager.fetchModels();
 
+    // Parse URL params for models to load (?model=url1&model=url2)
+    const urlModelIds = [];
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const modelUrls = params.getAll('model');
+        const seen = new Set();
+        modelUrls.forEach((urlEncoded, index) => {
+            const url = decodeURIComponent(urlEncoded).trim();
+            if (!url || seen.has(url)) return;
+            seen.add(url);
+            const name = url.split('/').pop().split('?')[0] || `model_${index}`;
+            const id = `url_${index}_${name}`;
+            modelsManager.modelsData.push({
+                id,
+                name,
+                url,
+                key: null
+            });
+            urlModelIds.push(id);
+        });
+    } catch (e) {
+        console.warn('Failed to parse model URL params:', e);
+    }
+
     // Initialize tree view with models manager
     treeView = new TreeView(viewer, {
         containerElement: document.getElementById('treeViewPanel'),
@@ -121,6 +145,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     setTimeout(() => {
         treeView._updateUploadDeleteButtonsVisibility();
     }, 100);
+
+    // Load any models from URL params
+    if (urlModelIds.length > 0) {
+        for (let i = 0; i < urlModelIds.length; i++) {
+            const isLast = i === urlModelIds.length - 1;
+            await modelsManager.loadModel(urlModelIds[i]);
+            if (isLast && modelsManager.getNumModelsLoaded() > 0) {
+                modelsManager._autoFitView();
+            }
+        }
+    }
 });
 
 // Initialize context menus

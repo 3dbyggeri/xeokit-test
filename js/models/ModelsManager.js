@@ -535,15 +535,23 @@ export class ModelsManager {
         }
 
         try {
+            // For URL-based models (no S3 key), use proxy to avoid CORS
+            const src = modelInfo.key
+                ? modelInfo.url
+                : `/api/modeldata/proxy?url=${encodeURIComponent(modelInfo.url)}`;
+
+            console.log('ModelsManager: Requesting XKT', { modelId, src: src });
+
             // Load the model using XKTLoader
             const model = await this.xktLoader.load({
                 id: modelId,
-                src: modelInfo.url,
+                src,
                 edges: true
             });
 
             this.loadedModels.add(modelId);
             console.log('ModelsManager: Model loaded successfully:', modelId);
+            console.log('ModelsManager: Model in scene', { modelId, meshCount: (model && model.meshIds) ? model.meshIds.length : 'N/A' });
 
             // Fetch properties and tree view data from backend
             try {
@@ -554,9 +562,10 @@ export class ModelsManager {
                     const fileName = decodeURIComponent(modelInfo.key.split('/').pop());
                     modelName = fileName.replace('.xkt', '.rvt');
                 } else if (modelInfo.url) {
-                    // fallback: try to extract from url
-                    const fileName = decodeURIComponent(modelInfo.url.split('/').pop());
-                    modelName = fileName.replace('.xkt', '.rvt');
+                    // fallback: try to extract from url (strip query string and hash)
+                    const pathPart = modelInfo.url.split('?')[0].split('#')[0];
+                    const fileName = decodeURIComponent(pathPart.split('/').pop());
+                    modelName = fileName.replace(/\.xkt$/i, '.rvt');
                 } else {
                     modelName = modelInfo.name; // fallback, may not work
                 }
@@ -624,7 +633,7 @@ export class ModelsManager {
             return true;
 
         } catch (error) {
-            console.error('ModelsManager: Error loading model:', modelId, error);
+            console.error('ModelsManager: Error loading model:', modelId, error?.message || error, error?.stack);
             return false;
         }
     }

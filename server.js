@@ -251,6 +251,53 @@ app.get('/api/modeldata/xkt-files', async (req, res) => {
     }
 });
 
+// Normalize Dropbox shared links to direct-download URL so we get the file, not the HTML preview.
+function normalizeDropboxUrl(urlString) {
+    try {
+        const u = new URL(urlString);
+        const host = u.hostname.toLowerCase();
+        if (host === 'www.dropbox.com' || host === 'dropbox.com') {
+            u.hostname = 'dl.dropboxusercontent.com';
+            u.searchParams.set('dl', '1');
+            return u.toString();
+        }
+        return urlString;
+    } catch (e) {
+        return urlString;
+    }
+}
+
+// Proxy endpoint for external XKT URLs (avoids CORS when loading from Dropbox, etc.)
+app.get('/api/modeldata/proxy', async (req, res) => {
+    try {
+        const targetUrl = req.query.url;
+        if (!targetUrl) {
+            return res.status(400).json({ error: 'Missing url query parameter' });
+        }
+
+        const decoded = decodeURIComponent(targetUrl);
+        const urlToFetch = normalizeDropboxUrl(decoded);
+        if (urlToFetch !== decoded) {
+            console.log('Proxy: normalized Dropbox URL for direct download');
+        }
+
+        const response = await axios.get(urlToFetch, {
+            responseType: 'arraybuffer',
+            timeout: 120000,
+            maxContentLength: 500 * 1024 * 1024 // 500 MB
+        });
+
+        console.log('Proxy: XKT loaded successfully', { url: urlToFetch, sizeBytes: response.data.length });
+
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Length', response.data.length);
+        res.send(response.data);
+    } catch (error) {
+        console.error('Proxy: XKT load failed', { url: req.query.url, error: error.message });
+        res.status(500).json({ error: 'Failed to fetch resource', message: error.message });
+    }
+});
+
 // Proxy endpoint for XKT files
 app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
     try {
@@ -262,6 +309,8 @@ app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
             Key: key
         }).promise();
 
+        console.log('XKT from S3: loaded successfully', { key: req.params.key, sizeBytes: s3Object.ContentLength });
+
         // Set appropriate headers
         res.setHeader('Content-Type', 'application/octet-stream');
         res.setHeader('Content-Length', s3Object.ContentLength);
@@ -270,7 +319,7 @@ app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
         res.send(s3Object.Body);
 
     } catch (error) {
-        console.error('Error fetching XKT file:', error);
+        console.error('XKT from S3: load failed', { key: req.params.key, error: error.message });
         res.status(500).json({ error: 'Error fetching XKT file' });
     }
 });
