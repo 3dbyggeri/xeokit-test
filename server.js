@@ -267,6 +267,24 @@ function normalizeDropboxUrl(urlString) {
     }
 }
 
+// Normalize Google Drive view links to direct-download URL (avoids 401 on /file/d/.../view).
+function normalizeGoogleDriveUrl(urlString) {
+    try {
+        const match = urlString.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+        if (match) {
+            return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+        }
+        return urlString;
+    } catch (e) {
+        return urlString;
+    }
+}
+
+// Apply all URL normalizations (Dropbox, Google Drive, etc.).
+function normalizeUrl(urlString) {
+    return normalizeGoogleDriveUrl(normalizeDropboxUrl(urlString));
+}
+
 // Validate that a URL is reachable (for Load Model form blur validation).
 app.get('/api/modeldata/validate-url', async (req, res) => {
     try {
@@ -275,7 +293,7 @@ app.get('/api/modeldata/validate-url', async (req, res) => {
             return res.status(400).json({ valid: false, message: 'Missing url query parameter' });
         }
         const decoded = decodeURIComponent(raw).trim();
-        const urlToCheck = normalizeDropboxUrl(decoded);
+        const urlToCheck = normalizeUrl(decoded);
         const response = await axios.head(urlToCheck, { timeout: 10000, maxRedirects: 5, validateStatus: () => true });
         const valid = response.status >= 200 && response.status < 300;
         if (valid) {
@@ -296,9 +314,9 @@ app.get('/api/modeldata/proxy', async (req, res) => {
         }
 
         const decoded = decodeURIComponent(targetUrl);
-        const urlToFetch = normalizeDropboxUrl(decoded);
+        const urlToFetch = normalizeUrl(decoded);
         if (urlToFetch !== decoded) {
-            console.log('Proxy: normalized Dropbox URL for direct download');
+            console.log('Proxy: normalized URL for direct download');
         }
 
         const response = await axios.get(urlToFetch, {

@@ -550,23 +550,9 @@ export class ModelsManager {
                 edges: true
             });
 
-            // Check if model has any objects (invalid XKT resolves but produces empty model)
-            let objectIds = this.viewer.scene.getObjectIdsInModel?.(modelId);
-            if (!objectIds || !Array.isArray(objectIds)) {
-                objectIds = Object.values(this.viewer.scene.objects || {}).filter(
-                    o => o && o.model && o.model.id === modelId
-                ).map(o => o.id);
-            }
-            if (!objectIds || objectIds.length === 0) {
-                const sceneModel = this.viewer.scene.models[modelId];
-                if (sceneModel) sceneModel.destroy();
-                console.warn('ModelsManager: Model loaded but has no objects (invalid XKT?):', modelId);
-                return false;
-            }
-
             this.loadedModels.add(modelId);
             console.log('ModelsManager: Model loaded successfully:', modelId);
-            console.log('ModelsManager: Model in scene', { modelId, objectCount: objectIds.length });
+            console.log('ModelsManager: Model in scene', { modelId, meshCount: (model && model.meshIds) ? model.meshIds.length : 'N/A' });
 
             // Fetch properties and tree view data: from metadataUrl if set, else from backend (S3/MongoDB)
             try {
