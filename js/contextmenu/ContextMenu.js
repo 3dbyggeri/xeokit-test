@@ -523,7 +523,15 @@ export class ModelNodeContextMenu extends ContextMenu {
     }
 }
 
+function deriveModelDataUrlFromS3ModelUrl(modelUrl) {
+    if (!modelUrl || !modelUrl.includes('/api/modeldata/xkt/') || !/\.xkt$/i.test(modelUrl)) return null;
+    return modelUrl.replace(/\.xkt$/i, '_modelData.json');
+}
+
 function buildSingleModelUrl(modelUrl, modelDataUrl) {
+    if (!modelDataUrl && modelUrl) {
+        modelDataUrl = deriveModelDataUrlFromS3ModelUrl(modelUrl);
+    }
     const base = window.location.origin + window.location.pathname;
     const params = new URLSearchParams();
     params.set('model', modelUrl);
