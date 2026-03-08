@@ -368,6 +368,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (singleModelMode && modelsManager.getNumModelsLoaded() === 0) {
             if (errEl) errEl.style.display = 'block';
             if (linkEl) linkEl.href = window.location.origin + window.location.pathname;
+            alert('Model failed to load. Please check the URL.');
         } else {
             if (errEl) errEl.style.display = 'none';
         }
