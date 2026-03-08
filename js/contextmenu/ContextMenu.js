@@ -500,7 +500,7 @@ export class ModelNodeContextMenu extends ContextMenu {
         const items = [
             [
                 {
-                    getTitle: () => "Copy Url",
+                    getTitle: () => "Copy Model Url",
                     doAction: (context) => {
                         const url = buildSingleModelUrl(context.modelUrl, context.modelDataUrl);
                         if (navigator.clipboard && navigator.clipboard.writeText) {
@@ -511,7 +511,7 @@ export class ModelNodeContextMenu extends ContextMenu {
                     }
                 },
                 {
-                    getTitle: () => "Open Model",
+                    getTitle: () => "Open in Single-model viewer",
                     doAction: (context) => {
                         const url = buildSingleModelUrl(context.modelUrl, context.modelDataUrl);
                         window.open(url, '_blank');

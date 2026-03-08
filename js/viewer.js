@@ -51,23 +51,24 @@ const toolbar = new Toolbar(viewer, {
     toolbarElement: toolbarElement
 });
 
-// Load Model modal: open button, blur validation, Load and Open actions.
+// Load Model modal: open button, Load and Open actions (no URL reachability validation - Dropbox etc. often fail HEAD checks).
 function _initLoadModelModal() {
     const modalEl = document.getElementById('loadModelModal');
     const modelUrlInput = document.getElementById('loadModelUrlInput');
     const modelDataUrlInput = document.getElementById('loadModelDataUrlInput');
     const modelUrlValidation = document.getElementById('loadModelUrlValidation');
-    const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
     const loadBtn = document.getElementById('loadModelLoadBtn');
     const openBtn = document.getElementById('loadModelOpenBtn');
+    const modalDialog = document.getElementById('loadModelModalDialog');
 
     if (!modalEl || !modelUrlInput) return;
 
     document.querySelector('.xeokit-loadModel')?.addEventListener('click', () => {
         modelUrlInput.value = '';
         modelDataUrlInput.value = '';
-        modelUrlValidation.textContent = '';
-        modelDataUrlValidation.textContent = '';
+        if (modelUrlValidation) modelUrlValidation.textContent = '';
+        const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
+        if (modelDataUrlValidation) modelDataUrlValidation.textContent = '';
         if (window.$ && window.$.fn && window.$.fn.modal) {
             window.$('#loadModelModal').modal('show');
         } else {
@@ -76,41 +77,69 @@ function _initLoadModelModal() {
         }
     });
 
-    function setValidation(el, valid, message) {
-        el.textContent = message || (valid ? 'URL is valid' : 'URL could not be reached');
-        el.style.color = valid ? 'green' : 'red';
-    }
-
-    async function validateUrl(url) {
-        if (!url || !url.trim()) return null;
+    function isValidUrl(url) {
+        if (!url || !url.trim()) return false;
         try {
-            const res = await fetch(`/api/modeldata/validate-url?url=${encodeURIComponent(url.trim())}`);
-            const data = await res.json();
-            return data.valid === true;
-        } catch (e) {
+            const u = new URL(url.trim());
+            return u.protocol === 'http:' || u.protocol === 'https:';
+        } catch {
             return false;
         }
     }
 
-    modelUrlInput.addEventListener('blur', async () => {
-        const url = modelUrlInput.value.trim();
-        if (!url) {
-            modelUrlValidation.textContent = '';
-            return;
-        }
-        const valid = await validateUrl(url);
-        setValidation(modelUrlValidation, valid);
-    });
+    function setValidation(el, message, isWarning = false) {
+        if (!el) return;
+        el.textContent = message || '';
+        el.style.color = message ? (isWarning ? '#b8860b' : 'red') : '';
+    }
 
-    modelDataUrlInput.addEventListener('blur', async () => {
-        const url = modelDataUrlInput.value.trim();
-        if (!url) {
-            modelDataUrlValidation.textContent = '';
+    function validateOnBlur() {
+        const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
+        const modelUrl = modelUrlInput.value.trim();
+        const modelDataUrl = modelDataUrlInput.value.trim();
+        if (!modelUrl) {
+            setValidation(modelUrlValidation, '');
+            setValidation(modelDataUrlValidation, '');
             return;
         }
-        const valid = await validateUrl(url);
-        setValidation(modelDataUrlValidation, valid);
-    });
+        if (!isValidUrl(modelUrl)) {
+            setValidation(modelUrlValidation, 'URL format may be invalid (e.g. https://...)', true);
+        } else {
+            setValidation(modelUrlValidation, '');
+        }
+        if (modelDataUrl && !isValidUrl(modelDataUrl)) {
+            setValidation(modelDataUrlValidation, 'ModelData URL format may be invalid', true);
+        } else {
+            setValidation(modelDataUrlValidation, '');
+        }
+    }
+
+    modelUrlInput.addEventListener('blur', validateOnBlur);
+    modelDataUrlInput.addEventListener('blur', validateOnBlur);
+
+    // Resizable modal (width only) via drag handle
+    if (modalDialog) {
+        let startX = 0, startW = 0;
+        const handle = modalDialog.querySelector('.modal-resize-handle');
+        if (handle) {
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                startX = e.clientX;
+                startW = modalDialog.offsetWidth;
+                const onMove = (ev) => {
+                    const dx = ev.clientX - startX;
+                    const newW = Math.max(400, startW + dx);
+                    modalDialog.style.width = newW + 'px';
+                };
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+        }
+    }
 
     function closeModal() {
         if (window.$ && window.$.fn && window.$.fn.modal) {
@@ -133,11 +162,25 @@ function _initLoadModelModal() {
 
     loadBtn.addEventListener('click', async () => {
         const modelUrl = modelUrlInput.value.trim();
+        const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
         if (!modelUrl) {
-            setValidation(modelUrlValidation, false, 'Model URL is required');
+            setValidation(modelUrlValidation, 'Model URL is required');
+            setValidation(modelDataUrlValidation);
             return;
         }
         const modelDataUrl = modelDataUrlInput.value.trim() || undefined;
+        const modelUrlInvalid = !isValidUrl(modelUrl);
+        const modelDataUrlInvalid = modelDataUrl && !isValidUrl(modelDataUrl);
+        if (modelUrlInvalid) {
+            setValidation(modelUrlValidation, 'URL format may be invalid (e.g. https://...)', true);
+        } else {
+            setValidation(modelUrlValidation);
+        }
+        if (modelDataUrlInvalid) {
+            setValidation(modelDataUrlValidation, 'ModelData URL format may be invalid', true);
+        } else {
+            setValidation(modelDataUrlValidation);
+        }
         const name = modelUrl.split('/').pop().split('?')[0] || 'model';
         const nextIndex = (modelsManager.modelsData.filter(m => m.id && m.id.startsWith('url_')).length) || 0;
         const id = `url_${nextIndex}_${name}`;
@@ -157,9 +200,24 @@ function _initLoadModelModal() {
 
     openBtn.addEventListener('click', () => {
         const modelUrl = modelUrlInput.value.trim();
+        const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
         if (!modelUrl) {
-            setValidation(modelUrlValidation, false, 'Model URL is required');
+            setValidation(modelUrlValidation, 'Model URL is required');
+            setValidation(modelDataUrlValidation);
             return;
+        }
+        const modelDataUrl = modelDataUrlInput.value.trim() || undefined;
+        const modelUrlInvalid = !isValidUrl(modelUrl);
+        const modelDataUrlInvalid = modelDataUrl && !isValidUrl(modelDataUrl);
+        if (modelUrlInvalid) {
+            setValidation(modelUrlValidation, 'URL format may be invalid (e.g. https://...)', true);
+        } else {
+            setValidation(modelUrlValidation);
+        }
+        if (modelDataUrlInvalid) {
+            setValidation(modelDataUrlValidation, 'ModelData URL format may be invalid', true);
+        } else {
+            setValidation(modelDataUrlValidation);
         }
         const url = buildSingleModelUrlFromInputs();
         window.open(url, '_blank');
@@ -305,11 +363,13 @@ document.addEventListener('DOMContentLoaded', async () => {
                 modelsManager._autoFitView();
             }
         }
+        const errEl = document.getElementById('singleModelLoadError');
+        const linkEl = document.getElementById('singleModelLoadErrorLink');
         if (singleModelMode && modelsManager.getNumModelsLoaded() === 0) {
-            const errEl = document.getElementById('singleModelLoadError');
-            const linkEl = document.getElementById('singleModelLoadErrorLink');
             if (errEl) errEl.style.display = 'block';
             if (linkEl) linkEl.href = window.location.origin + window.location.pathname;
+        } else {
+            if (errEl) errEl.style.display = 'none';
         }
     }
 });
