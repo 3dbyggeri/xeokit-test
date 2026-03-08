@@ -271,6 +271,7 @@ export class ModelsManager {
                 modelId: model.id,
                 modelUrl: model.url,
                 modelKey: model.key,
+                modelMetadataUrl: model.metadataUrl || null,
                 loaded: this.loadedModels.has(model.id)
             }))
         };
@@ -553,62 +554,67 @@ export class ModelsManager {
             console.log('ModelsManager: Model loaded successfully:', modelId);
             console.log('ModelsManager: Model in scene', { modelId, meshCount: (model && model.meshIds) ? model.meshIds.length : 'N/A' });
 
-            // Fetch properties and tree view data from backend
+            // Fetch properties and tree view data: from metadataUrl if set, else from backend (S3/MongoDB)
             try {
-                // Try to reconstruct the model name as expected by the backend
-                let modelName;
-                if (modelInfo.key) {
-                    // S3 key, e.g. "models/rac_basic_sample_project_3D.xkt"
-                    const fileName = decodeURIComponent(modelInfo.key.split('/').pop());
-                    modelName = fileName.replace('.xkt', '.rvt');
-                } else if (modelInfo.url) {
-                    // fallback: try to extract from url (strip query string and hash)
-                    const pathPart = modelInfo.url.split('?')[0].split('#')[0];
-                    const fileName = decodeURIComponent(pathPart.split('/').pop());
-                    modelName = fileName.replace(/\.xkt$/i, '.rvt');
-                } else {
-                    modelName = modelInfo.name; // fallback, may not work
-                }
-                
-                if (modelName && window.treeView) {
-                    // Try S3properties endpoint first, fallback to MongoDB properties endpoint
-                    let propRes = await fetch(`/api/modeldata/S3properties/${encodeURIComponent(modelName)}`);
-                    let dataSource = 'S3';
-
-                    // If S3 fails, try MongoDB endpoint as fallback
-                    if (!propRes.ok) {
-                        console.log(`S3 properties failed for ${modelName}, trying MongoDB fallback...`);
-                        propRes = await fetch(`/api/modeldata/properties/${encodeURIComponent(modelName)}`);
-                        dataSource = 'MongoDB';
-                    }
-
+                if (modelInfo.metadataUrl) {
+                    // Fetch modelData JSON from the provided URL (via proxy for CORS/Dropbox)
+                    const proxyUrl = `/api/modeldata/proxy?url=${encodeURIComponent(modelInfo.metadataUrl)}`;
+                    const propRes = await fetch(proxyUrl);
                     if (propRes.ok) {
-                        const propData = await propRes.json();
-                        window.modelProperties = propData.properties;
-                        window.modelLegend = propData.legend;
-
-                        // Store tree view data for this model
-                        if (propData.treeView) {
-                            console.log(`Storing tree data for model from ${dataSource}:`, modelId, propData.treeView);
-                            this.loadedModelsTreeData[modelId] = propData.treeView;
-                        } else {
-                            this.loadedModelsTreeData[modelId] = null;
-                        }
-
-                        // Rebuild storeys tree if we're on that tab
+                        const text = await propRes.text();
+                        const propData = JSON.parse(text);
+                        window.modelProperties = propData.Properties || propData.properties || null;
+                        window.modelLegend = propData.Legend || propData.legend || null;
+                        this.loadedModelsTreeData[modelId] = propData.TreeView || propData.treeView || null;
                         if (window.treeView && window.treeView.currentTab === 'storeys') {
                             window.treeView.buildTree();
                         }
-                        console.log(`Loaded properties for model from ${dataSource}:`, modelName);
-
-                        // Log additional S3 info if available
-                        if (dataSource === 'S3' && propData.s3Key) {
-                            console.log(`S3 file: ${propData.s3Key}, Size: ${propData.fileSize} bytes`);
-                        }
+                        console.log('Loaded properties for model from metadataUrl:', modelId);
                     } else {
-                        console.warn(`Failed to load properties for model from both S3 and MongoDB:`, modelName);
                         window.modelProperties = null;
                         window.modelLegend = null;
+                        this.loadedModelsTreeData[modelId] = null;
+                        console.warn('Failed to fetch metadata from metadataUrl:', modelInfo.metadataUrl);
+                    }
+                } else {
+                    // Try to reconstruct the model name as expected by the backend
+                    let modelName;
+                    if (modelInfo.key) {
+                        const fileName = decodeURIComponent(modelInfo.key.split('/').pop());
+                        modelName = fileName.replace('.xkt', '.rvt');
+                    } else if (modelInfo.url) {
+                        const pathPart = modelInfo.url.split('?')[0].split('#')[0];
+                        const fileName = decodeURIComponent(pathPart.split('/').pop());
+                        modelName = fileName.replace(/\.xkt$/i, '.rvt');
+                    } else {
+                        modelName = modelInfo.name;
+                    }
+
+                    if (modelName && window.treeView) {
+                        let propRes = await fetch(`/api/modeldata/S3properties/${encodeURIComponent(modelName)}`);
+                        let dataSource = 'S3';
+                        if (!propRes.ok) {
+                            console.log(`S3 properties failed for ${modelName}, trying MongoDB fallback...`);
+                            propRes = await fetch(`/api/modeldata/properties/${encodeURIComponent(modelName)}`);
+                            dataSource = 'MongoDB';
+                        }
+                        if (propRes.ok) {
+                            const propData = await propRes.json();
+                            window.modelProperties = propData.properties;
+                            window.modelLegend = propData.legend;
+                            this.loadedModelsTreeData[modelId] = propData.treeView || null;
+                            if (window.treeView && window.treeView.currentTab === 'storeys') {
+                                window.treeView.buildTree();
+                            }
+                            console.log(`Loaded properties for model from ${dataSource}:`, modelName);
+                            if (dataSource === 'S3' && propData.s3Key) {
+                                console.log(`S3 file: ${propData.s3Key}, Size: ${propData.fileSize} bytes`);
+                            }
+                        } else {
+                            console.warn(`Failed to load properties for model from both S3 and MongoDB:`, modelName);
+                            window.modelProperties = null;
+                            window.modelLegend = null;
+                        }
                     }
                 }
             } catch (error) {

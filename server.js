@@ -267,6 +267,26 @@ function normalizeDropboxUrl(urlString) {
     }
 }
 
+// Validate that a URL is reachable (for Load Model form blur validation).
+app.get('/api/modeldata/validate-url', async (req, res) => {
+    try {
+        const raw = req.query.url;
+        if (!raw) {
+            return res.status(400).json({ valid: false, message: 'Missing url query parameter' });
+        }
+        const decoded = decodeURIComponent(raw).trim();
+        const urlToCheck = normalizeDropboxUrl(decoded);
+        const response = await axios.head(urlToCheck, { timeout: 10000, maxRedirects: 5, validateStatus: () => true });
+        const valid = response.status >= 200 && response.status < 300;
+        if (valid) {
+            return res.json({ valid: true });
+        }
+        return res.json({ valid: false, message: `HTTP ${response.status}` });
+    } catch (error) {
+        return res.json({ valid: false, message: error.message || 'Request failed' });
+    }
+});
+
 // Proxy endpoint for external XKT URLs (avoids CORS when loading from Dropbox, etc.)
 app.get('/api/modeldata/proxy', async (req, res) => {
     try {

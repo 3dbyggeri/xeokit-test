@@ -490,3 +490,43 @@ export class CanvasContextMenu extends ContextMenu {
         this.viewer = viewer;
     }
 }
+
+/**
+ * Model node context menu - shown when right-clicking on a model node in the Models tree.
+ * Context: { node, modelUrl, modelDataUrl }
+ */
+export class ModelNodeContextMenu extends ContextMenu {
+    constructor(cfg = {}) {
+        const items = [
+            [
+                {
+                    getTitle: () => "Copy Url",
+                    doAction: (context) => {
+                        const url = buildSingleModelUrl(context.modelUrl, context.modelDataUrl);
+                        if (navigator.clipboard && navigator.clipboard.writeText) {
+                            navigator.clipboard.writeText(url).then(() => {
+                                if (context.onCopied) context.onCopied();
+                            });
+                        }
+                    }
+                },
+                {
+                    getTitle: () => "Open Model",
+                    doAction: (context) => {
+                        const url = buildSingleModelUrl(context.modelUrl, context.modelDataUrl);
+                        window.open(url, '_blank');
+                    }
+                }
+            ]
+        ];
+        super({ ...cfg, items });
+    }
+}
+
+function buildSingleModelUrl(modelUrl, modelDataUrl) {
+    const base = window.location.origin + window.location.pathname;
+    const params = new URLSearchParams();
+    params.set('model', modelUrl);
+    if (modelDataUrl) params.set('modelData', modelDataUrl);
+    return `${base}?${params.toString()}`;
+}

@@ -3,7 +3,7 @@ import { Viewer, XKTLoaderPlugin, NavCubePlugin } from "https://unpkg.com/@xeoki
 import { Toolbar } from "./toolbar/Toolbar.js";
 import { TreeView } from "./treeview/TreeView.js";
 import { ModelsManager } from "./models/ModelsManager.js";
-import { ObjectContextMenu, CanvasContextMenu } from "./contextmenu/ContextMenu.js";
+import { ObjectContextMenu, CanvasContextMenu, ModelNodeContextMenu } from "./contextmenu/ContextMenu.js";
 import { UploadTool } from "./upload/UploadTool.js";
 
 // Initialize viewer
@@ -51,6 +51,122 @@ const toolbar = new Toolbar(viewer, {
     toolbarElement: toolbarElement
 });
 
+// Load Model modal: open button, blur validation, Load and Open actions.
+function _initLoadModelModal() {
+    const modalEl = document.getElementById('loadModelModal');
+    const modelUrlInput = document.getElementById('loadModelUrlInput');
+    const modelDataUrlInput = document.getElementById('loadModelDataUrlInput');
+    const modelUrlValidation = document.getElementById('loadModelUrlValidation');
+    const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
+    const loadBtn = document.getElementById('loadModelLoadBtn');
+    const openBtn = document.getElementById('loadModelOpenBtn');
+
+    if (!modalEl || !modelUrlInput) return;
+
+    document.querySelector('.xeokit-loadModel')?.addEventListener('click', () => {
+        modelUrlInput.value = '';
+        modelDataUrlInput.value = '';
+        modelUrlValidation.textContent = '';
+        modelDataUrlValidation.textContent = '';
+        if (window.$ && window.$.fn && window.$.fn.modal) {
+            window.$('#loadModelModal').modal('show');
+        } else {
+            modalEl.style.display = 'block';
+            modalEl.classList.add('in');
+        }
+    });
+
+    function setValidation(el, valid, message) {
+        el.textContent = message || (valid ? 'URL is valid' : 'URL could not be reached');
+        el.style.color = valid ? 'green' : 'red';
+    }
+
+    async function validateUrl(url) {
+        if (!url || !url.trim()) return null;
+        try {
+            const res = await fetch(`/api/modeldata/validate-url?url=${encodeURIComponent(url.trim())}`);
+            const data = await res.json();
+            return data.valid === true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    modelUrlInput.addEventListener('blur', async () => {
+        const url = modelUrlInput.value.trim();
+        if (!url) {
+            modelUrlValidation.textContent = '';
+            return;
+        }
+        const valid = await validateUrl(url);
+        setValidation(modelUrlValidation, valid);
+    });
+
+    modelDataUrlInput.addEventListener('blur', async () => {
+        const url = modelDataUrlInput.value.trim();
+        if (!url) {
+            modelDataUrlValidation.textContent = '';
+            return;
+        }
+        const valid = await validateUrl(url);
+        setValidation(modelDataUrlValidation, valid);
+    });
+
+    function closeModal() {
+        if (window.$ && window.$.fn && window.$.fn.modal) {
+            window.$('#loadModelModal').modal('hide');
+        } else {
+            modalEl.style.display = 'none';
+            modalEl.classList.remove('in');
+        }
+    }
+
+    function buildSingleModelUrlFromInputs() {
+        const modelUrl = modelUrlInput.value.trim();
+        const modelDataUrl = modelDataUrlInput.value.trim();
+        const base = window.location.origin + window.location.pathname;
+        const params = new URLSearchParams();
+        params.set('model', modelUrl);
+        if (modelDataUrl) params.set('modelData', modelDataUrl);
+        return `${base}?${params.toString()}`;
+    }
+
+    loadBtn.addEventListener('click', async () => {
+        const modelUrl = modelUrlInput.value.trim();
+        if (!modelUrl) {
+            setValidation(modelUrlValidation, false, 'Model URL is required');
+            return;
+        }
+        const modelDataUrl = modelDataUrlInput.value.trim() || undefined;
+        const name = modelUrl.split('/').pop().split('?')[0] || 'model';
+        const nextIndex = (modelsManager.modelsData.filter(m => m.id && m.id.startsWith('url_')).length) || 0;
+        const id = `url_${nextIndex}_${name}`;
+        modelsManager.modelsData.push({
+            id,
+            name,
+            url: modelUrl,
+            key: null,
+            metadataUrl: modelDataUrl
+        });
+        closeModal();
+        await modelsManager.loadModel(id);
+        if (treeView && treeView.currentTab === 'models') {
+            treeView.buildTree();
+        }
+    });
+
+    openBtn.addEventListener('click', () => {
+        const modelUrl = modelUrlInput.value.trim();
+        if (!modelUrl) {
+            setValidation(modelUrlValidation, false, 'Model URL is required');
+            return;
+        }
+        const url = buildSingleModelUrlFromInputs();
+        window.open(url, '_blank');
+        closeModal();
+    });
+}
+
 // Initialize models manager and tree view after DOM is ready
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialize models manager
@@ -93,26 +209,47 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Fetch models data
     await modelsManager.fetchModels();
 
-    // Parse URL params for models to load (?model=url1&model=url2)
+    // Parse URL params: single model mode (exactly one model param) vs main mode
+    const params = new URLSearchParams(window.location.search);
+    const modelParamValues = params.getAll('model');
+    const modelDataParam = params.get('modelData');
+    const singleModelMode = modelParamValues.length === 1;
+    window.singleModelMode = singleModelMode;
+
     const urlModelIds = [];
     try {
-        const params = new URLSearchParams(window.location.search);
-        const modelUrls = params.getAll('model');
-        const seen = new Set();
-        modelUrls.forEach((urlEncoded, index) => {
-            const url = decodeURIComponent(urlEncoded).trim();
-            if (!url || seen.has(url)) return;
-            seen.add(url);
-            const name = url.split('/').pop().split('?')[0] || `model_${index}`;
-            const id = `url_${index}_${name}`;
+        if (singleModelMode) {
+            const url = decodeURIComponent(modelParamValues[0]).trim();
+            const metadataUrl = modelDataParam ? decodeURIComponent(modelDataParam).trim() : null;
+            const name = url.split('/').pop().split('?')[0] || 'model_0';
+            const id = `url_0_${name}`;
             modelsManager.modelsData.push({
                 id,
                 name,
                 url,
-                key: null
+                key: null,
+                metadataUrl: metadataUrl || undefined
             });
             urlModelIds.push(id);
-        });
+        } else if (modelParamValues.length > 0) {
+            const seen = new Set();
+            modelParamValues.forEach((urlEncoded, index) => {
+                const url = decodeURIComponent(urlEncoded).trim();
+                if (!url || seen.has(url)) return;
+                seen.add(url);
+                const metadataUrl = (index === 0 && modelDataParam) ? decodeURIComponent(modelDataParam).trim() : null;
+                const name = url.split('/').pop().split('?')[0] || `model_${index}`;
+                const id = `url_${index}_${name}`;
+                modelsManager.modelsData.push({
+                    id,
+                    name,
+                    url,
+                    key: null,
+                    metadataUrl: metadataUrl || undefined
+                });
+                urlModelIds.push(id);
+            });
+        }
     } catch (e) {
         console.warn('Failed to parse model URL params:', e);
     }
@@ -122,26 +259,39 @@ document.addEventListener('DOMContentLoaded', async () => {
         containerElement: document.getElementById('treeViewPanel'),
         modelsManager: modelsManager,
         onNodeClick: (node) => {
-            // Only handle checkbox toggling - no metadata display
             console.log('Tree node clicked:', node);
         },
-        onNodeContextMenu: (node) => {
-            console.log('Tree node context menu:', node);
-            // Handle tree node context menu
+        onNodeContextMenu: (node, event) => {
+            if (node.type === 'model' && node.modelId) {
+                const model = modelsManager.modelsData.find(m => m.id === node.modelId);
+                if (!model) return;
+                const modelUrl = (model.url && model.url.startsWith('http')) ? model.url : (window.location.origin + (model.url || ''));
+                const modelDataUrl = model.metadataUrl || node.modelMetadataUrl || null;
+                if (window.modelNodeContextMenu) {
+                    window.modelNodeContextMenu.setContext({ node, modelUrl, modelDataUrl });
+                    window.modelNodeContextMenu.show(event.clientX, event.clientY);
+                }
+            }
         }
     });
 
-    // Set initial tab to models
-    treeView.switchTab('models');
+    // Set initial tab: single model mode -> storeys (Objects tree), main mode -> models
+    treeView.switchTab(singleModelMode ? 'storeys' : 'models');
 
     // Make treeView available globally for ModelsManager
     window.treeView = treeView;
 
-    // Initialize UploadTool
+    // Model node context menu (Copy Url, Open Model)
+    window.modelNodeContextMenu = new ModelNodeContextMenu({ hideOnAction: true, parentNode: document.body });
+
+    // Initialize UploadTool (only used in main mode; button hidden in single model mode)
     const uploadTool = new UploadTool(modelsManager);
     window.uploadTool = uploadTool;
 
-    // Ensure buttons are visible on initial load
+    // Load Model modal: validation on blur, Load and Open buttons
+    _initLoadModelModal();
+
+    // Ensure buttons are visible on initial load (and hide in single-model mode via TreeView)
     setTimeout(() => {
         treeView._updateUploadDeleteButtonsVisibility();
     }, 100);
@@ -154,6 +304,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (isLast && modelsManager.getNumModelsLoaded() > 0) {
                 modelsManager._autoFitView();
             }
+        }
+        if (singleModelMode && modelsManager.getNumModelsLoaded() === 0) {
+            const errEl = document.getElementById('singleModelLoadError');
+            const linkEl = document.getElementById('singleModelLoadErrorLink');
+            if (errEl) errEl.style.display = 'block';
+            if (linkEl) linkEl.href = window.location.origin + window.location.pathname;
         }
     }
 });
