@@ -324,7 +324,10 @@ document.addEventListener('DOMContentLoaded', async () => {
                 const model = modelsManager.modelsData.find(m => m.id === node.modelId);
                 if (!model) return;
                 const modelUrl = (model.url && model.url.startsWith('http')) ? model.url : (window.location.origin + (model.url || ''));
-                const modelDataUrl = model.metadataUrl || node.modelMetadataUrl || null;
+                let modelDataUrl = model.metadataUrl || node.modelMetadataUrl || null;
+                if (!modelDataUrl && modelUrl && modelUrl.includes('/api/modeldata/xkt/') && /\.xkt$/i.test(modelUrl)) {
+                    modelDataUrl = modelUrl.replace(/\.xkt$/i, '_modelData.json');
+                }
                 if (window.modelNodeContextMenu) {
                     window.modelNodeContextMenu.setContext({ node, modelUrl, modelDataUrl });
                     window.modelNodeContextMenu.show(event.clientX, event.clientY);
