@@ -3,7 +3,7 @@ import { Viewer, XKTLoaderPlugin, NavCubePlugin } from "https://unpkg.com/@xeoki
 import { Toolbar } from "./toolbar/Toolbar.js";
 import { TreeView } from "./treeview/TreeView.js";
 import { ModelsManager } from "./models/ModelsManager.js";
-import { ObjectContextMenu, CanvasContextMenu } from "./contextmenu/ContextMenu.js";
+import { ObjectContextMenu, CanvasContextMenu, ModelNodeContextMenu } from "./contextmenu/ContextMenu.js";
 import { UploadTool } from "./upload/UploadTool.js";
 
 // Initialize viewer
@@ -51,6 +51,180 @@ const toolbar = new Toolbar(viewer, {
     toolbarElement: toolbarElement
 });
 
+// Load Model modal: open button, Load and Open actions (no URL reachability validation - Dropbox etc. often fail HEAD checks).
+function _initLoadModelModal() {
+    const modalEl = document.getElementById('loadModelModal');
+    const modelUrlInput = document.getElementById('loadModelUrlInput');
+    const modelDataUrlInput = document.getElementById('loadModelDataUrlInput');
+    const modelUrlValidation = document.getElementById('loadModelUrlValidation');
+    const loadBtn = document.getElementById('loadModelLoadBtn');
+    const openBtn = document.getElementById('loadModelOpenBtn');
+    const modalDialog = document.getElementById('loadModelModalDialog');
+
+    if (!modalEl || !modelUrlInput) return;
+
+    document.querySelector('.xeokit-loadModel')?.addEventListener('click', () => {
+        modelUrlInput.value = '';
+        modelDataUrlInput.value = '';
+        if (modelUrlValidation) modelUrlValidation.textContent = '';
+        const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
+        if (modelDataUrlValidation) modelDataUrlValidation.textContent = '';
+        if (window.$ && window.$.fn && window.$.fn.modal) {
+            window.$('#loadModelModal').modal('show');
+        } else {
+            modalEl.style.display = 'block';
+            modalEl.classList.add('in');
+        }
+    });
+
+    function isValidUrl(url) {
+        if (!url || !url.trim()) return false;
+        try {
+            const u = new URL(url.trim());
+            return u.protocol === 'http:' || u.protocol === 'https:';
+        } catch {
+            return false;
+        }
+    }
+
+    function setValidation(el, message, isWarning = false) {
+        if (!el) return;
+        el.textContent = message || '';
+        el.style.color = message ? (isWarning ? '#b8860b' : 'red') : '';
+    }
+
+    function validateOnBlur() {
+        const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
+        const modelUrl = modelUrlInput.value.trim();
+        const modelDataUrl = modelDataUrlInput.value.trim();
+        if (!modelUrl) {
+            setValidation(modelUrlValidation, '');
+            setValidation(modelDataUrlValidation, '');
+            return;
+        }
+        if (!isValidUrl(modelUrl)) {
+            setValidation(modelUrlValidation, 'URL format may be invalid (e.g. https://...)', true);
+        } else {
+            setValidation(modelUrlValidation, '');
+        }
+        if (modelDataUrl && !isValidUrl(modelDataUrl)) {
+            setValidation(modelDataUrlValidation, 'ModelData URL format may be invalid', true);
+        } else {
+            setValidation(modelDataUrlValidation, '');
+        }
+    }
+
+    modelUrlInput.addEventListener('blur', validateOnBlur);
+    modelDataUrlInput.addEventListener('blur', validateOnBlur);
+
+    // Resizable modal (width only) via drag handle
+    if (modalDialog) {
+        let startX = 0, startW = 0;
+        const handle = modalDialog.querySelector('.modal-resize-handle');
+        if (handle) {
+            handle.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                startX = e.clientX;
+                startW = modalDialog.offsetWidth;
+                const onMove = (ev) => {
+                    const dx = ev.clientX - startX;
+                    const newW = Math.max(400, startW + dx);
+                    modalDialog.style.width = newW + 'px';
+                };
+                const onUp = () => {
+                    document.removeEventListener('mousemove', onMove);
+                    document.removeEventListener('mouseup', onUp);
+                };
+                document.addEventListener('mousemove', onMove);
+                document.addEventListener('mouseup', onUp);
+            });
+        }
+    }
+
+    function closeModal() {
+        if (window.$ && window.$.fn && window.$.fn.modal) {
+            window.$('#loadModelModal').modal('hide');
+        } else {
+            modalEl.style.display = 'none';
+            modalEl.classList.remove('in');
+        }
+    }
+
+    function buildSingleModelUrlFromInputs() {
+        const modelUrl = modelUrlInput.value.trim();
+        const modelDataUrl = modelDataUrlInput.value.trim();
+        const base = window.location.origin + window.location.pathname;
+        const params = new URLSearchParams();
+        params.set('model', modelUrl);
+        if (modelDataUrl) params.set('modelData', modelDataUrl);
+        return `${base}?${params.toString()}`;
+    }
+
+    loadBtn.addEventListener('click', async () => {
+        const modelUrl = modelUrlInput.value.trim();
+        const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
+        if (!modelUrl) {
+            setValidation(modelUrlValidation, 'Model URL is required');
+            setValidation(modelDataUrlValidation);
+            return;
+        }
+        const modelDataUrl = modelDataUrlInput.value.trim() || undefined;
+        const modelUrlInvalid = !isValidUrl(modelUrl);
+        const modelDataUrlInvalid = modelDataUrl && !isValidUrl(modelDataUrl);
+        if (modelUrlInvalid) {
+            setValidation(modelUrlValidation, 'URL format may be invalid (e.g. https://...)', true);
+        } else {
+            setValidation(modelUrlValidation);
+        }
+        if (modelDataUrlInvalid) {
+            setValidation(modelDataUrlValidation, 'ModelData URL format may be invalid', true);
+        } else {
+            setValidation(modelDataUrlValidation);
+        }
+        const name = modelUrl.split('/').pop().split('?')[0] || 'model';
+        const nextIndex = (modelsManager.modelsData.filter(m => m.id && m.id.startsWith('url_')).length) || 0;
+        const id = `url_${nextIndex}_${name}`;
+        modelsManager.modelsData.push({
+            id,
+            name,
+            url: modelUrl,
+            key: null,
+            metadataUrl: modelDataUrl
+        });
+        closeModal();
+        await modelsManager.loadModel(id);
+        if (treeView && treeView.currentTab === 'models') {
+            treeView.buildTree();
+        }
+    });
+
+    openBtn.addEventListener('click', () => {
+        const modelUrl = modelUrlInput.value.trim();
+        const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
+        if (!modelUrl) {
+            setValidation(modelUrlValidation, 'Model URL is required');
+            setValidation(modelDataUrlValidation);
+            return;
+        }
+        const modelDataUrl = modelDataUrlInput.value.trim() || undefined;
+        const modelUrlInvalid = !isValidUrl(modelUrl);
+        const modelDataUrlInvalid = modelDataUrl && !isValidUrl(modelDataUrl);
+        if (modelUrlInvalid) {
+            setValidation(modelUrlValidation, 'URL format may be invalid (e.g. https://...)', true);
+        } else {
+            setValidation(modelUrlValidation);
+        }
+        if (modelDataUrlInvalid) {
+            setValidation(modelDataUrlValidation, 'ModelData URL format may be invalid', true);
+        } else {
+            setValidation(modelDataUrlValidation);
+        }
+        const url = buildSingleModelUrlFromInputs();
+        window.open(url, '_blank');
+        closeModal();
+    });
+}
+
 // Initialize models manager and tree view after DOM is ready
 document.addEventListener('DOMContentLoaded', async () => {
     // Initialize models manager
@@ -93,34 +267,112 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Fetch models data
     await modelsManager.fetchModels();
 
+    // Parse URL params: single model mode (exactly one model param) vs main mode
+    const params = new URLSearchParams(window.location.search);
+    const modelParamValues = params.getAll('model');
+    const modelDataParam = params.get('modelData');
+    const singleModelMode = modelParamValues.length === 1;
+    window.singleModelMode = singleModelMode;
+
+    const urlModelIds = [];
+    try {
+        if (singleModelMode) {
+            const url = decodeURIComponent(modelParamValues[0]).trim();
+            const metadataUrl = modelDataParam ? decodeURIComponent(modelDataParam).trim() : null;
+            const name = url.split('/').pop().split('?')[0] || 'model_0';
+            const id = `url_0_${name}`;
+            modelsManager.modelsData.push({
+                id,
+                name,
+                url,
+                key: null,
+                metadataUrl: metadataUrl || undefined
+            });
+            urlModelIds.push(id);
+        } else if (modelParamValues.length > 0) {
+            const seen = new Set();
+            modelParamValues.forEach((urlEncoded, index) => {
+                const url = decodeURIComponent(urlEncoded).trim();
+                if (!url || seen.has(url)) return;
+                seen.add(url);
+                const metadataUrl = (index === 0 && modelDataParam) ? decodeURIComponent(modelDataParam).trim() : null;
+                const name = url.split('/').pop().split('?')[0] || `model_${index}`;
+                const id = `url_${index}_${name}`;
+                modelsManager.modelsData.push({
+                    id,
+                    name,
+                    url,
+                    key: null,
+                    metadataUrl: metadataUrl || undefined
+                });
+                urlModelIds.push(id);
+            });
+        }
+    } catch (e) {
+        console.warn('Failed to parse model URL params:', e);
+    }
+
     // Initialize tree view with models manager
     treeView = new TreeView(viewer, {
         containerElement: document.getElementById('treeViewPanel'),
         modelsManager: modelsManager,
         onNodeClick: (node) => {
-            // Only handle checkbox toggling - no metadata display
             console.log('Tree node clicked:', node);
         },
-        onNodeContextMenu: (node) => {
-            console.log('Tree node context menu:', node);
-            // Handle tree node context menu
+        onNodeContextMenu: (node, event) => {
+            if (node.type === 'model' && node.modelId) {
+                const model = modelsManager.modelsData.find(m => m.id === node.modelId);
+                if (!model) return;
+                const modelUrl = (model.url && model.url.startsWith('http')) ? model.url : (window.location.origin + (model.url || ''));
+                const modelDataUrl = model.metadataUrl || node.modelMetadataUrl || null;
+                if (window.modelNodeContextMenu) {
+                    window.modelNodeContextMenu.setContext({ node, modelUrl, modelDataUrl });
+                    window.modelNodeContextMenu.show(event.clientX, event.clientY);
+                }
+            }
         }
     });
 
-    // Set initial tab to models
-    treeView.switchTab('models');
+    // Set initial tab: single model mode -> storeys (Objects tree), main mode -> models
+    treeView.switchTab(singleModelMode ? 'storeys' : 'models');
 
     // Make treeView available globally for ModelsManager
     window.treeView = treeView;
 
-    // Initialize UploadTool
+    // Model node context menu (Copy Url, Open Model)
+    window.modelNodeContextMenu = new ModelNodeContextMenu({ hideOnAction: true, parentNode: document.body });
+
+    // Initialize UploadTool (only used in main mode; button hidden in single model mode)
     const uploadTool = new UploadTool(modelsManager);
     window.uploadTool = uploadTool;
 
-    // Ensure buttons are visible on initial load
+    // Load Model modal: validation on blur, Load and Open buttons
+    _initLoadModelModal();
+
+    // Ensure buttons are visible on initial load (and hide in single-model mode via TreeView)
     setTimeout(() => {
         treeView._updateUploadDeleteButtonsVisibility();
     }, 100);
+
+    // Load any models from URL params
+    if (urlModelIds.length > 0) {
+        for (let i = 0; i < urlModelIds.length; i++) {
+            const isLast = i === urlModelIds.length - 1;
+            await modelsManager.loadModel(urlModelIds[i]);
+            if (isLast && modelsManager.getNumModelsLoaded() > 0) {
+                modelsManager._autoFitView();
+            }
+        }
+        const errEl = document.getElementById('singleModelLoadError');
+        const linkEl = document.getElementById('singleModelLoadErrorLink');
+        if (singleModelMode && modelsManager.getNumModelsLoaded() === 0) {
+            if (errEl) errEl.style.display = 'block';
+            if (linkEl) linkEl.href = window.location.origin + window.location.pathname;
+            alert('Model failed to load. Please check the URL.');
+        } else {
+            if (errEl) errEl.style.display = 'none';
+        }
+    }
 });
 
 // Initialize context menus

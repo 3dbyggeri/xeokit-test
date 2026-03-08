@@ -36,6 +36,24 @@
             margin: 5px;
             width: 200px;
         }
+        /* Load Model modal: resizable width via drag handle */
+        .loadModel-modal-dialog {
+            position: relative;
+            max-width: 90vw;
+        }
+        .modal-resize-handle {
+            position: absolute;
+            right: 0;
+            bottom: 0;
+            width: 12px;
+            height: 100%;
+            cursor: col-resize;
+            background: linear-gradient(to right, transparent 60%, rgba(0,0,0,0.08) 100%);
+            border-radius: 0 4px 4px 0;
+        }
+        .modal-resize-handle:hover {
+            background: linear-gradient(to right, transparent 50%, rgba(0,0,0,0.12) 100%);
+        }
     </style>
 </head>
 <body>
@@ -71,6 +89,7 @@
                     <div class="xeokit-btn-group">
                         <button type="button" class="xeokit-loadAllModels xeokit-btn">Load all</button>
                         <button type="button" class="xeokit-unloadAllModels xeokit-btn">Unload all</button>
+                        <button type="button" class="xeokit-loadModel xeokit-btn">Load Model</button>
                         <button type="button" class="xeokit-uploadModel xeokit-btn" style="display: none;">Upload</button>
                         <button type="button" class="xeokit-deleteModel xeokit-btn" style="display: none;">Delete</button>
                     </div>
@@ -81,6 +100,10 @@
             <!-- Storeys Tab -->
             <div class="xeokit-tab xeokit-storeysTab active">
                 <div class="xeokit-tab-content">
+                    <div id="singleModelLoadError" style="display: none; padding: 10px; margin: 10px; background: #f8d7da; color: #721c24; border-radius: 4px; font-size: 13px;">
+                        Model failed to load.
+                        <a href="#" id="singleModelLoadErrorLink">Open main viewer</a>
+                    </div>
                     <div class="xeokit-btn-group">
                         <button type="button" class="xeokit-showAllStoreys xeokit-btn">Show all</button>
                         <button type="button" class="xeokit-hideAllStoreys xeokit-btn">Hide all</button>
@@ -104,6 +127,36 @@
                 </thead>
                 <tbody></tbody>
             </table>
+        </div>
+    </div>
+
+    <!-- Load Model Modal -->
+    <div class="modal fade" id="loadModelModal" tabindex="-1" role="dialog">
+        <div class="modal-dialog loadModel-modal-dialog" id="loadModelModalDialog" role="document" style="min-width: 400px;">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                    <h4 class="modal-title">Load Model from URL</h4>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label for="loadModelUrlInput">Model URL (required)</label>
+                        <input type="text" class="form-control" id="loadModelUrlInput" placeholder="https://... .xkt">
+                        <div id="loadModelUrlValidation" class="loadModel-validation" style="font-size: 12px; margin-top: 4px;"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="loadModelDataUrlInput">ModelData URL (optional)</label>
+                        <input type="text" class="form-control" id="loadModelDataUrlInput" placeholder="https://... _modelData.json">
+                        <div id="loadModelDataUrlValidation" class="loadModel-validation" style="font-size: 12px; margin-top: 4px;"></div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-primary" id="loadModelLoadBtn" title="Load the model to the current viewer">Load</button>
+                    <button type="button" class="btn btn-default" id="loadModelOpenBtn" title="Open the model in a single model viewer">Open</button>
+                    <button type="button" class="btn btn-default" data-dismiss="modal">Cancel</button>
+                </div>
+            </div>
+            <div class="modal-resize-handle" title="Drag to resize"></div>
         </div>
     </div>
 

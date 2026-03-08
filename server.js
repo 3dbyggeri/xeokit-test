@@ -251,6 +251,91 @@ app.get('/api/modeldata/xkt-files', async (req, res) => {
     }
 });
 
+// Normalize Dropbox shared links to direct-download URL so we get the file, not the HTML preview.
+function normalizeDropboxUrl(urlString) {
+    try {
+        const u = new URL(urlString);
+        const host = u.hostname.toLowerCase();
+        if (host === 'www.dropbox.com' || host === 'dropbox.com') {
+            u.hostname = 'dl.dropboxusercontent.com';
+            u.searchParams.set('dl', '1');
+            return u.toString();
+        }
+        return urlString;
+    } catch (e) {
+        return urlString;
+    }
+}
+
+// Normalize Google Drive view links to direct-download URL (avoids 401 on /file/d/.../view).
+function normalizeGoogleDriveUrl(urlString) {
+    try {
+        const match = urlString.match(/drive\.google\.com\/file\/d\/([a-zA-Z0-9_-]+)/);
+        if (match) {
+            return `https://drive.google.com/uc?export=download&id=${match[1]}`;
+        }
+        return urlString;
+    } catch (e) {
+        return urlString;
+    }
+}
+
+// Apply all URL normalizations (Dropbox, Google Drive, etc.).
+function normalizeUrl(urlString) {
+    return normalizeGoogleDriveUrl(normalizeDropboxUrl(urlString));
+}
+
+// Validate that a URL is reachable (for Load Model form blur validation).
+app.get('/api/modeldata/validate-url', async (req, res) => {
+    try {
+        const raw = req.query.url;
+        if (!raw) {
+            return res.status(400).json({ valid: false, message: 'Missing url query parameter' });
+        }
+        const decoded = decodeURIComponent(raw).trim();
+        const urlToCheck = normalizeUrl(decoded);
+        const response = await axios.head(urlToCheck, { timeout: 10000, maxRedirects: 5, validateStatus: () => true });
+        const valid = response.status >= 200 && response.status < 300;
+        if (valid) {
+            return res.json({ valid: true });
+        }
+        return res.json({ valid: false, message: `HTTP ${response.status}` });
+    } catch (error) {
+        return res.json({ valid: false, message: error.message || 'Request failed' });
+    }
+});
+
+// Proxy endpoint for external XKT URLs (avoids CORS when loading from Dropbox, etc.)
+app.get('/api/modeldata/proxy', async (req, res) => {
+    try {
+        const targetUrl = req.query.url;
+        if (!targetUrl) {
+            return res.status(400).json({ error: 'Missing url query parameter' });
+        }
+
+        const decoded = decodeURIComponent(targetUrl);
+        const urlToFetch = normalizeUrl(decoded);
+        if (urlToFetch !== decoded) {
+            console.log('Proxy: normalized URL for direct download');
+        }
+
+        const response = await axios.get(urlToFetch, {
+            responseType: 'arraybuffer',
+            timeout: 120000,
+            maxContentLength: 500 * 1024 * 1024 // 500 MB
+        });
+
+        console.log('Proxy: XKT loaded successfully', { url: urlToFetch, sizeBytes: response.data.length });
+
+        res.setHeader('Content-Type', 'application/octet-stream');
+        res.setHeader('Content-Length', response.data.length);
+        res.send(response.data);
+    } catch (error) {
+        console.error('Proxy: XKT load failed', { url: req.query.url, error: error.message });
+        res.status(500).json({ error: 'Failed to fetch resource', message: error.message });
+    }
+});
+
 // Proxy endpoint for XKT files
 app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
     try {
@@ -262,6 +347,8 @@ app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
             Key: key
         }).promise();
 
+        console.log('XKT from S3: loaded successfully', { key: req.params.key, sizeBytes: s3Object.ContentLength });
+
         // Set appropriate headers
         res.setHeader('Content-Type', 'application/octet-stream');
         res.setHeader('Content-Length', s3Object.ContentLength);
@@ -270,7 +357,7 @@ app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
         res.send(s3Object.Body);
 
     } catch (error) {
-        console.error('Error fetching XKT file:', error);
+        console.error('XKT from S3: load failed', { key: req.params.key, error: error.message });
         res.status(500).json({ error: 'Error fetching XKT file' });
     }
 });

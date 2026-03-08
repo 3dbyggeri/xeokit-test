@@ -25,6 +25,12 @@ export class TreeView {
             return;
         }
 
+        // In single-model mode, hide the Models tab so only Objects Tree is visible
+        if (window.singleModelMode) {
+            const modelsTabBtn = panel.querySelector('.xeokit-modelsTabBtn');
+            if (modelsTabBtn) modelsTabBtn.style.display = 'none';
+        }
+
         // Add click handlers for tab buttons
         const tabs = ['models', 'storeys'];
         tabs.forEach(tabId => {
@@ -106,14 +112,21 @@ export class TreeView {
 
     _updateUploadDeleteButtonsVisibility() {
         const isModelsTab = this.currentTab === 'models';
-        const uploadBtn = document.querySelector('.xeokit-uploadModel');
-        const deleteBtn = document.querySelector('.xeokit-deleteModel');
-        
-        if (uploadBtn) {
-            uploadBtn.style.display = isModelsTab ? '' : 'none';
-        }
-        if (deleteBtn) {
-            deleteBtn.style.display = isModelsTab ? '' : 'none';
+        const singleModelMode = !!window.singleModelMode;
+
+        if (singleModelMode) {
+            const modelsTabContent = document.querySelector('.xeokit-modelsTab .xeokit-tab-content');
+            const modelsBtnGroup = modelsTabContent?.querySelector('.xeokit-btn-group');
+            if (modelsBtnGroup) modelsBtnGroup.style.display = 'none';
+        } else {
+            const modelsTabContent = document.querySelector('.xeokit-modelsTab .xeokit-tab-content');
+            const modelsBtnGroup = modelsTabContent?.querySelector('.xeokit-btn-group');
+            if (modelsBtnGroup) modelsBtnGroup.style.display = '';
+
+            const uploadBtn = document.querySelector('.xeokit-uploadModel');
+            const deleteBtn = document.querySelector('.xeokit-deleteModel');
+            if (uploadBtn) uploadBtn.style.display = isModelsTab ? '' : 'none';
+            if (deleteBtn) deleteBtn.style.display = isModelsTab ? '' : 'none';
         }
     }
 
