@@ -54,6 +54,9 @@
         .modal-resize-handle:hover {
             background: linear-gradient(to right, transparent 50%, rgba(0,0,0,0.12) 100%);
         }
+        .load-model-row { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px solid #eee; }
+        .load-model-row:last-child { border-bottom: none; margin-bottom: 0; }
+        .btn-add-model, .btn-remove-model { margin-left: 6px; padding: 2px 8px; font-size: 12px; cursor: pointer; }
     </style>
 </head>
 <body>
@@ -139,15 +142,19 @@
                     <h4 class="modal-title">Load Model from URL</h4>
                 </div>
                 <div class="modal-body">
-                    <div class="form-group">
-                        <label for="loadModelUrlInput">Model URL (required)</label>
-                        <input type="text" class="form-control" id="loadModelUrlInput" placeholder="https://... .xkt">
-                        <div id="loadModelUrlValidation" class="loadModel-validation" style="font-size: 12px; margin-top: 4px;"></div>
-                    </div>
-                    <div class="form-group">
-                        <label for="loadModelDataUrlInput">ModelData URL (optional)</label>
-                        <input type="text" class="form-control" id="loadModelDataUrlInput" placeholder="https://... _modelData.json">
-                        <div id="loadModelDataUrlValidation" class="loadModel-validation" style="font-size: 12px; margin-top: 4px;"></div>
+                    <div id="loadModelRowsContainer">
+                        <div class="load-model-row" data-index="0">
+                            <div class="form-group">
+                                <label>Model URL (required) <button type="button" class="btn-add-model" title="Add another model">+</button><button type="button" class="btn-remove-model" title="Remove this model" style="display:none">−</button></label>
+                                <input type="text" class="form-control load-model-url" placeholder="https://... .xkt">
+                                <div class="loadModel-validation load-model-url-validation" style="font-size: 12px; margin-top: 4px;"></div>
+                            </div>
+                            <div class="form-group">
+                                <label>ModelData URL (optional)</label>
+                                <input type="text" class="form-control load-model-data-url" placeholder="https://... _modelData.json">
+                                <div class="loadModel-validation load-model-data-url-validation" style="font-size: 12px; margin-top: 4px;"></div>
+                            </div>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">

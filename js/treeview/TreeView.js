@@ -25,8 +25,8 @@ export class TreeView {
             return;
         }
 
-        // In single-model mode, hide the Models tab so only Objects Tree is visible
-        if (window.singleModelMode) {
+        // When models loaded via URL (single or multiple), hide the Models tab so only Objects Tree is visible
+        if (window.urlModelsMode) {
             const modelsTabBtn = panel.querySelector('.xeokit-modelsTabBtn');
             if (modelsTabBtn) modelsTabBtn.style.display = 'none';
         }
@@ -112,9 +112,9 @@ export class TreeView {
 
     _updateUploadDeleteButtonsVisibility() {
         const isModelsTab = this.currentTab === 'models';
-        const singleModelMode = !!window.singleModelMode;
+        const urlModelsMode = !!window.urlModelsMode;
 
-        if (singleModelMode) {
+        if (urlModelsMode) {
             const modelsTabContent = document.querySelector('.xeokit-modelsTab .xeokit-tab-content');
             const modelsBtnGroup = modelsTabContent?.querySelector('.xeokit-btn-group');
             if (modelsBtnGroup) modelsBtnGroup.style.display = 'none';
