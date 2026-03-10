@@ -618,23 +618,25 @@ export class GlasshouseImportTool extends Controller {
 
     _applyGlasHouseJournalGUID(elementId, glassHouseJournalGUID) {
         try {
-            // Simplified approach: directly search window.modelProperties for matching UniqueIdPara
-            if (!window.modelProperties) {
+            const byModel = window.modelPropertiesByModel;
+            if (!byModel) {
                 console.warn('No model properties loaded');
                 return false;
             }
 
             let appliedCount = 0;
+            const legendByModel = window.modelLegendByModel || {};
 
-            // Iterate through all elements in modelProperties to find matching UniqueIdPara
-            for (const [elementKey, props] of Object.entries(window.modelProperties)) {
-                const uniqueIdPara = this._getPropertyValue(props, 'UniqueIdPara');
-
-                if (uniqueIdPara === elementId) {
-                    // Found matching element, apply GlasHouseJournalGUID
-                    this._setPropertyValue(props, 'GlasHouseJournalGUID', glassHouseJournalGUID);
-                    appliedCount++;
-                    console.log(`Applied GlasHouseJournalGUID ${glassHouseJournalGUID} to element ${elementKey} with UniqueIdPara ${elementId}`);
+            for (const [modelId, properties] of Object.entries(byModel)) {
+                if (!properties) continue;
+                const legend = legendByModel[modelId] || null;
+                for (const [elementKey, props] of Object.entries(properties)) {
+                    const uniqueIdPara = this._getPropertyValue(props, 'UniqueIdPara', legend);
+                    if (uniqueIdPara === elementId) {
+                        this._setPropertyValue(props, 'GlasHouseJournalGUID', glassHouseJournalGUID, legend);
+                        appliedCount++;
+                        console.log(`Applied GlasHouseJournalGUID ${glassHouseJournalGUID} to element ${elementId}`);
+                    }
                 }
             }
 
@@ -645,53 +647,42 @@ export class GlasshouseImportTool extends Controller {
                 console.warn(`No elements found with UniqueIdPara: ${elementId}`);
                 return false;
             }
-
         } catch (error) {
             console.error('Error applying GlasHouseJournalGUID:', error);
             return false;
         }
     }
 
-    _getPropertyValue(props, propertyName) {
-        // First try direct property name match
+    _getPropertyValue(props, propertyName, legend) {
         if (props[propertyName] !== undefined) {
             return props[propertyName];
         }
-
-        // If not found, try to find by legend name (reverse lookup) - same as GlasshouseLinkTool
-        if (window.modelLegend) {
-            for (const [key, legendInfo] of Object.entries(window.modelLegend)) {
+        const leg = legend || (window.modelLegendByModel && Object.values(window.modelLegendByModel)[0]);
+        if (leg) {
+            for (const [key, legendInfo] of Object.entries(leg)) {
                 if (legendInfo.Name === propertyName && props[key] !== undefined) {
-                    //console.log(`Found property '${propertyName}' via legend key '${key}' = '${props[key]}'`);
                     return props[key];
                 }
             }
         }
-
         return null;
     }
 
-    _setPropertyValue(props, propertyName, propertyValue) {
-        // First try to find existing property by name
+    _setPropertyValue(props, propertyName, propertyValue, legend) {
         if (props[propertyName] !== undefined) {
             props[propertyName] = propertyValue;
             return;
         }
-
-        // If not found, try to find by legend name and set via legend key
-        if (window.modelLegend) {
-            for (const [key, legendInfo] of Object.entries(window.modelLegend)) {
+        const leg = legend || (window.modelLegendByModel && Object.values(window.modelLegendByModel)[0]);
+        if (leg) {
+            for (const [key, legendInfo] of Object.entries(leg)) {
                 if (legendInfo.Name === propertyName) {
                     props[key] = propertyValue;
-                    console.log(`Set property '${propertyName}' via legend key '${key}' = '${propertyValue}'`);
                     return;
                 }
             }
         }
-
-        // If no legend mapping found, set directly by name
         props[propertyName] = propertyValue;
-        console.log(`Set property '${propertyName}' directly = '${propertyValue}'`);
     }
 
     _showProgressDialog(title) {

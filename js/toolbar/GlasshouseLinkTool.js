@@ -757,41 +757,23 @@ export class GlasshouseLinkTool extends Controller {
     }
 
     _getMetadataProperty(object, propertyName) {
-        // Extract elementId from objectId (e.g., Surface[105545] => 105545)
-        const match = object.id.match(/\[(\d+)\]/);
-        const elementId = match ? match[1] : null;
-
-        if (!elementId) {
-            console.warn('Could not extract element ID from object ID:', object.id);
+        const result = window.getPropertiesForEntity ? window.getPropertiesForEntity(object) : null;
+        if (!result || !result.props) {
             return null;
         }
+        const props = result.props;
+        const legend = result.legend;
 
-        // Check if metadata is loaded
-        if (!window.modelProperties || !window.modelProperties[elementId]) {
-            console.warn('No metadata found for element ID:', elementId);
-            return null;
-        }
-
-        const props = window.modelProperties[elementId];
-
-        // First try direct property name match
         if (props[propertyName] !== undefined) {
-            //console.log(`Found property '${propertyName}' = '${props[propertyName]}' for element ${elementId}`);
             return props[propertyName];
         }
-
-        // If not found, try to find by legend name (reverse lookup)
-        if (window.modelLegend) {
-            for (const [key, legendInfo] of Object.entries(window.modelLegend)) {
+        if (legend) {
+            for (const [key, legendInfo] of Object.entries(legend)) {
                 if (legendInfo.Name === propertyName && props[key] !== undefined) {
-                    //console.log(`Found property '${propertyName}' via legend key '${key}' = '${props[key]}' for element ${elementId}`);
                     return props[key];
                 }
             }
         }
-
-        // Property not found
-        console.warn(`Property '${propertyName}' not found for element ID: ${elementId}`);
         return null;
     }
 
@@ -799,56 +781,40 @@ export class GlasshouseLinkTool extends Controller {
      * Show metadata for a selected object
      */
     _showMetadataForObject(entity) {
-        // Expand metadata window if collapsed
         const metadataBox = document.getElementById('metadataBox');
         if (metadataBox && metadataBox.classList.contains('collapsed')) {
             metadataBox.classList.remove('collapsed');
         }
 
-        // Access global variables from viewer.js
-        if (typeof window.modelProperties === 'undefined' || typeof window.modelLegend === 'undefined') {
-            console.log('Model properties or legend not available');
+        const result = window.getPropertiesForEntity ? window.getPropertiesForEntity(entity) : null;
+        if (!result || !result.props) {
             this._showBasicMetadata(entity);
             return;
         }
 
         const metadataTable = document.querySelector('#metadataTable tbody');
-        if (!metadataTable) {
-            console.warn('Metadata table not found');
-            return;
-        }
+        if (!metadataTable) return;
         metadataTable.innerHTML = '';
+        console.log('Showing metadata for selected object:', entity.id);
 
-        // Extract elementId from entity.id (e.g., Surface[105545] => 105545)
-        const match = entity.id.match(/\[(\d+)\]/);
-        const elementId = match ? match[1] : null;
-
-        if (elementId && window.modelProperties[elementId]) {
-            const props = window.modelProperties[elementId];
-            console.log('Showing metadata for selected object:', entity.id);
-
-            // Map property indices to names using legend
-            Object.entries(props).forEach(([key, value]) => {
-                let propName = key;
-                if (window.modelLegend[key] && window.modelLegend[key].Name) {
-                    propName = window.modelLegend[key].Name;
-                }
-                let displayValue;
-                if (value !== null && typeof value === 'object') {
-                    displayValue = JSON.stringify(value);
-                } else {
-                    displayValue = value;
-                }
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${propName}</td>
-                    <td>${displayValue}</td>
-                `;
-                metadataTable.appendChild(row);
-            });
-        } else {
-            this._showBasicMetadata(entity);
-        }
+        Object.entries(result.props).forEach(([key, value]) => {
+            let propName = key;
+            if (result.legend && result.legend[key] && result.legend[key].Name) {
+                propName = result.legend[key].Name;
+            }
+            let displayValue;
+            if (value !== null && typeof value === 'object') {
+                displayValue = JSON.stringify(value);
+            } else {
+                displayValue = value;
+            }
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${propName}</td>
+                <td>${displayValue}</td>
+            `;
+            metadataTable.appendChild(row);
+        });
     }
 
     /**

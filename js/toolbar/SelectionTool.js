@@ -80,46 +80,34 @@ class SelectionTool extends Controller {
      * Show metadata for a selected object
      */
     _showMetadataForObject(entity) {
-        // Access global variables from viewer.js
-        if (typeof window.modelProperties === 'undefined' || typeof window.modelLegend === 'undefined') {
-            console.log('Model properties or legend not available');
+        const result = window.getPropertiesForEntity ? window.getPropertiesForEntity(entity) : null;
+        if (!result || !result.props) {
             this._showBasicMetadata(entity);
             return;
         }
 
         const metadataTable = document.querySelector('#metadataTable tbody');
         metadataTable.innerHTML = '';
+        console.log('Showing metadata for selected object:', entity.id);
 
-        // Extract elementId from entity.id (e.g., Surface[105545] => 105545)
-        const match = entity.id.match(/\[(\d+)\]/);
-        const elementId = match ? match[1] : null;
-
-        if (elementId && window.modelProperties[elementId]) {
-            const props = window.modelProperties[elementId];
-            console.log('Showing metadata for selected object:', entity.id);
-
-            // Map property indices to names using legend
-            Object.entries(props).forEach(([key, value]) => {
-                let propName = key;
-                if (window.modelLegend[key] && window.modelLegend[key].Name) {
-                    propName = window.modelLegend[key].Name;
-                }
-                let displayValue;
-                if (value !== null && typeof value === 'object') {
-                    displayValue = JSON.stringify(value);
-                } else {
-                    displayValue = value;
-                }
-                const row = document.createElement('tr');
-                row.innerHTML = `
-                    <td>${propName}</td>
-                    <td>${displayValue}</td>
-                `;
-                metadataTable.appendChild(row);
-            });
-        } else {
-            this._showBasicMetadata(entity);
-        }
+        Object.entries(result.props).forEach(([key, value]) => {
+            let propName = key;
+            if (result.legend && result.legend[key] && result.legend[key].Name) {
+                propName = result.legend[key].Name;
+            }
+            let displayValue;
+            if (value !== null && typeof value === 'object') {
+                displayValue = JSON.stringify(value);
+            } else {
+                displayValue = value;
+            }
+            const row = document.createElement('tr');
+            row.innerHTML = `
+                <td>${propName}</td>
+                <td>${displayValue}</td>
+            `;
+            metadataTable.appendChild(row);
+        });
     }
 
     /**

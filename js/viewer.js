@@ -29,13 +29,31 @@ viewer.cameraControl.panRightClick = false;
 const modelSelect = document.getElementById('modelSelect');
 const toolbarElement = document.getElementById('myToolbar');
 
-// Store loaded properties and legend
-let modelProperties = null;
-let modelLegend = null;
+// Per-model properties and legend (populated by ModelsManager)
+window.modelPropertiesByModel = window.modelPropertiesByModel || {};
+window.modelLegendByModel = window.modelLegendByModel || {};
 
-// Make properties available globally for toolbar tools
-window.modelProperties = null;
-window.modelLegend = null;
+// Helper: get properties and legend for an entity (supports multi-model)
+function getPropertiesForEntity(entity) {
+    if (!entity || !entity.id) return null;
+    const match = entity.id.match(/\[(\d+)\]/);
+    const elementId = match ? match[1] : entity.id;
+    const modelId = entity.modelId || null;
+    const byModel = window.modelPropertiesByModel;
+    const legendByModel = window.modelLegendByModel;
+    if (!byModel) return null;
+    if (modelId && byModel[modelId] && byModel[modelId][elementId]) {
+        return { props: byModel[modelId][elementId], legend: legendByModel?.[modelId] || null };
+    }
+    for (const mid of Object.keys(byModel)) {
+        const props = byModel[mid];
+        if (props && props[elementId]) {
+            return { props: props[elementId], legend: legendByModel?.[mid] || null };
+        }
+    }
+    return null;
+}
+window.getPropertiesForEntity = getPropertiesForEntity;
 
 // Store current model name
 let currentModelName = null;
@@ -425,8 +443,8 @@ viewer.scene.canvas.canvas.addEventListener('contextmenu', (event) => {
         objectContextMenu.setContext({
             viewer: viewer,
             entity: hit.entity,
-            showProperties: (objectId) => {
-                showObjectMetadata(objectId);
+            showProperties: (entity) => {
+                showObjectMetadata(entity);
             },
             showInExplorer: (objectId) => {
                 showInTreeView(objectId);
@@ -500,9 +518,8 @@ function createSampleTreeData() {
     };
 }
 
-// Function to show object metadata
-function showObjectMetadata(objectId) {
-    // Expand metadata window if collapsed
+// Function to show object metadata (accepts entity or objectId string)
+function showObjectMetadata(entityOrObjectId) {
     const metadataBox = document.getElementById('metadataBox');
     if (metadataBox && metadataBox.classList.contains('collapsed')) {
         metadataBox.classList.remove('collapsed');
@@ -511,18 +528,30 @@ function showObjectMetadata(objectId) {
     const metadataTable = document.querySelector('#metadataTable tbody');
     metadataTable.innerHTML = '';
 
-    // Extract elementId from objectId (e.g., Surface[105545] => 105545)
-    const match = objectId.match(/\[(\d+)\]/);
-    const elementId = match ? match[1] : null;
+    const entity = typeof entityOrObjectId === 'object' ? entityOrObjectId : null;
+    const objectId = entity ? entity.id : String(entityOrObjectId);
+    let result = entity ? getPropertiesForEntity(entity) : null;
+    if (!result && objectId) {
+        const match = objectId.match(/\[(\d+)\]/);
+        const elementId = match ? match[1] : objectId;
+        const byModel = window.modelPropertiesByModel;
+        const legendByModel = window.modelLegendByModel;
+        if (byModel) {
+            for (const mid of Object.keys(byModel)) {
+                const props = byModel[mid];
+                if (props && props[elementId]) {
+                    result = { props: props[elementId], legend: legendByModel?.[mid] || null };
+                    break;
+                }
+            }
+        }
+    }
 
-    if (elementId && window.modelProperties && window.modelProperties[elementId]) {
-        const props = window.modelProperties[elementId];
-
-        // Map property indices to names using legend
-        Object.entries(props).forEach(([key, value]) => {
+    if (result && result.props) {
+        Object.entries(result.props).forEach(([key, value]) => {
             let propName = key;
-            if (window.modelLegend && window.modelLegend[key] && window.modelLegend[key].Name) {
-                propName = window.modelLegend[key].Name;
+            if (result.legend && result.legend[key] && result.legend[key].Name) {
+                propName = result.legend[key].Name;
             }
             let displayValue;
             if (value !== null && typeof value === 'object') {
@@ -538,7 +567,6 @@ function showObjectMetadata(objectId) {
             metadataTable.appendChild(row);
         });
     } else {
-        // Show object ID if no properties found
         const idRow = document.createElement('tr');
         idRow.innerHTML = `
             <td>ID</td>
@@ -614,23 +642,16 @@ function handleDefaultClick(coords) {
     const metadataTable = document.querySelector('#metadataTable tbody');
     metadataTable.innerHTML = '';
 
-    // In default mode, we only show metadata - NO selection/highlighting
-    if (hit && modelProperties && modelLegend) {
+    if (hit && hit.entity) {
         const entity = hit.entity;
         console.log('Showing metadata for entity:', entity.id);
-
-        // Extract elementId from entity.id (e.g., Surface[105545] => 105545)
-        const match = entity.id.match(/\[(\d+)\]/);
-        const elementId = match ? match[1] : null;
-        if (elementId && modelProperties[elementId]) {
-            const props = modelProperties[elementId];
+        const result = getPropertiesForEntity(entity);
+        if (result && result.props) {
             console.log('Properties found for entity:', entity.id);
-
-            // Map property indices to names using legend
-            Object.entries(props).forEach(([key, value]) => {
+            Object.entries(result.props).forEach(([key, value]) => {
                 let propName = key;
-                if (modelLegend[key] && modelLegend[key].Name) {
-                    propName = modelLegend[key].Name;
+                if (result.legend && result.legend[key] && result.legend[key].Name) {
+                    propName = result.legend[key].Name;
                 }
                 let displayValue;
                 if (value !== null && typeof value === 'object') {
@@ -646,7 +667,6 @@ function handleDefaultClick(coords) {
                 metadataTable.appendChild(row);
             });
         } else {
-            // Show entity ID if no properties found
             const idRow = document.createElement('tr');
             idRow.innerHTML = `
                 <td>ID</td>
@@ -687,18 +707,12 @@ viewer.cameraControl.on("picked", (pickResult) => {
         const metadataTable = document.querySelector('#metadataTable tbody');
         metadataTable.innerHTML = '';
 
-        // Extract elementId from entity.id (e.g., Surface[105545] => 105545)
-        const match = entity.id.match(/\[(\d+)\]/);
-        const elementId = match ? match[1] : null;
-
-        if (elementId && window.modelProperties && window.modelProperties[elementId]) {
-            const props = window.modelProperties[elementId];
-
-            // Map property indices to names using legend
-            Object.entries(props).forEach(([key, value]) => {
+        const result = getPropertiesForEntity(entity);
+        if (result && result.props) {
+            Object.entries(result.props).forEach(([key, value]) => {
                 let propName = key;
-                if (window.modelLegend && window.modelLegend[key] && window.modelLegend[key].Name) {
-                    propName = window.modelLegend[key].Name;
+                if (result.legend && result.legend[key] && result.legend[key].Name) {
+                    propName = result.legend[key].Name;
                 }
                 let displayValue;
                 if (value !== null && typeof value === 'object') {
@@ -714,7 +728,6 @@ viewer.cameraControl.on("picked", (pickResult) => {
                 metadataTable.appendChild(row);
             });
         } else {
-            // Show entity ID if no properties found
             const idRow = document.createElement('tr');
             idRow.innerHTML = `
                 <td>ID</td>
