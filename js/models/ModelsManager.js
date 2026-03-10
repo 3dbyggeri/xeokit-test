@@ -566,7 +566,13 @@ export class ModelsManager {
                         window.modelProperties = propData.Properties || propData.properties || null;
                         window.modelLegend = propData.Legend || propData.legend || null;
                         this.loadedModelsTreeData[modelId] = propData.TreeView || propData.treeView || null;
-                        if (window.treeView && window.treeView.currentTab === 'storeys') {
+                        // Extract model name from metadata (e.g. for Google Drive URLs where URL has no .xkt filename)
+                        const metadataName = propData?.ProjectInfo?.Main?.ProjectInfor?.ModelName;
+                        if (metadataName && typeof metadataName === 'string' && metadataName.trim()) {
+                            modelInfo.name = metadataName.trim();
+                            console.log('Updated model name from metadata:', modelInfo.name);
+                        }
+                        if (window.treeView) {
                             window.treeView.buildTree();
                         }
                         console.log('Loaded properties for model from metadataUrl:', modelId);

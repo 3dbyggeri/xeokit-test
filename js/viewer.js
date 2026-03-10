@@ -54,21 +54,84 @@ const toolbar = new Toolbar(viewer, {
 // Load Model modal: open button, Load and Open actions (no URL reachability validation - Dropbox etc. often fail HEAD checks).
 function _initLoadModelModal() {
     const modalEl = document.getElementById('loadModelModal');
-    const modelUrlInput = document.getElementById('loadModelUrlInput');
-    const modelDataUrlInput = document.getElementById('loadModelDataUrlInput');
-    const modelUrlValidation = document.getElementById('loadModelUrlValidation');
+    const rowsContainer = document.getElementById('loadModelRowsContainer');
     const loadBtn = document.getElementById('loadModelLoadBtn');
     const openBtn = document.getElementById('loadModelOpenBtn');
     const modalDialog = document.getElementById('loadModelModalDialog');
 
-    if (!modalEl || !modelUrlInput) return;
+    if (!modalEl || !rowsContainer) return;
+
+    const ROW_TEMPLATE = rowsContainer.querySelector('.load-model-row')?.outerHTML || '';
+
+    function getRows() {
+        return Array.from(rowsContainer.querySelectorAll('.load-model-row'));
+    }
+
+    function addRow() {
+        const rows = getRows();
+        const nextIndex = rows.length;
+        const div = document.createElement('div');
+        div.className = 'load-model-row';
+        div.dataset.index = String(nextIndex);
+        div.innerHTML = ROW_TEMPLATE.replace(/data-index="\d+"/, `data-index="${nextIndex}"`);
+        rowsContainer.appendChild(div);
+        _bindRowEvents(div);
+        _updateRemoveButtons();
+    }
+
+    function removeRow(rowEl) {
+        if (getRows().length <= 1) return;
+        rowEl.remove();
+        getRows().forEach((r, i) => r.dataset.index = String(i));
+        _updateRemoveButtons();
+    }
+
+    function _updateRemoveButtons() {
+        const rows = getRows();
+        const showRemove = rows.length > 1;
+        rows.forEach(r => {
+            const btn = r.querySelector('.btn-remove-model');
+            if (btn) btn.style.display = showRemove ? '' : 'none';
+        });
+    }
+
+    function _bindRowEvents(rowEl) {
+        const urlInput = rowEl.querySelector('.load-model-url');
+        const dataInput = rowEl.querySelector('.load-model-data-url');
+        const urlValidation = rowEl.querySelector('.load-model-url-validation');
+        const dataValidation = rowEl.querySelector('.load-model-data-url-validation');
+
+        const validateRow = () => {
+            const modelUrl = urlInput?.value?.trim() || '';
+            const modelDataUrl = dataInput?.value?.trim() || '';
+            if (!modelUrl) {
+                setValidation(urlValidation, '');
+                setValidation(dataValidation, '');
+                return;
+            }
+            if (!isValidUrl(modelUrl)) {
+                setValidation(urlValidation, 'URL format may be invalid (e.g. https://...)', true);
+            } else {
+                setValidation(urlValidation, '');
+            }
+            if (modelDataUrl && !isValidUrl(modelDataUrl)) {
+                setValidation(dataValidation, 'ModelData URL format may be invalid', true);
+            } else {
+                setValidation(dataValidation, '');
+            }
+        };
+
+        urlInput?.addEventListener('blur', validateRow);
+        dataInput?.addEventListener('blur', validateRow);
+
+        rowEl.querySelector('.btn-add-model')?.addEventListener('click', () => addRow());
+        rowEl.querySelector('.btn-remove-model')?.addEventListener('click', () => removeRow(rowEl));
+    }
 
     document.querySelector('.xeokit-loadModel')?.addEventListener('click', () => {
-        modelUrlInput.value = '';
-        modelDataUrlInput.value = '';
-        if (modelUrlValidation) modelUrlValidation.textContent = '';
-        const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
-        if (modelDataUrlValidation) modelDataUrlValidation.textContent = '';
+        rowsContainer.innerHTML = ROW_TEMPLATE;
+        getRows().forEach(r => _bindRowEvents(r));
+        _updateRemoveButtons();
         if (window.$ && window.$.fn && window.$.fn.modal) {
             window.$('#loadModelModal').modal('show');
         } else {
@@ -92,30 +155,6 @@ function _initLoadModelModal() {
         el.textContent = message || '';
         el.style.color = message ? (isWarning ? '#b8860b' : 'red') : '';
     }
-
-    function validateOnBlur() {
-        const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
-        const modelUrl = modelUrlInput.value.trim();
-        const modelDataUrl = modelDataUrlInput.value.trim();
-        if (!modelUrl) {
-            setValidation(modelUrlValidation, '');
-            setValidation(modelDataUrlValidation, '');
-            return;
-        }
-        if (!isValidUrl(modelUrl)) {
-            setValidation(modelUrlValidation, 'URL format may be invalid (e.g. https://...)', true);
-        } else {
-            setValidation(modelUrlValidation, '');
-        }
-        if (modelDataUrl && !isValidUrl(modelDataUrl)) {
-            setValidation(modelDataUrlValidation, 'ModelData URL format may be invalid', true);
-        } else {
-            setValidation(modelDataUrlValidation, '');
-        }
-    }
-
-    modelUrlInput.addEventListener('blur', validateOnBlur);
-    modelDataUrlInput.addEventListener('blur', validateOnBlur);
 
     // Resizable modal (width only) via drag handle
     if (modalDialog) {
@@ -150,79 +189,73 @@ function _initLoadModelModal() {
         }
     }
 
-    function buildSingleModelUrlFromInputs() {
-        const modelUrl = modelUrlInput.value.trim();
-        const modelDataUrl = modelDataUrlInput.value.trim();
+    function getModelPairsFromRows() {
+        return getRows().map(row => {
+            const urlInput = row.querySelector('.load-model-url');
+            const dataInput = row.querySelector('.load-model-data-url');
+            return {
+                modelUrl: urlInput?.value?.trim() || '',
+                modelDataUrl: dataInput?.value?.trim() || ''
+            };
+        }).filter(p => p.modelUrl);
+    }
+
+    function buildMultiModelUrlFromInputs() {
+        const pairs = getModelPairsFromRows();
         const base = window.location.origin + window.location.pathname;
         const params = new URLSearchParams();
-        params.set('model', modelUrl);
-        if (modelDataUrl) params.set('modelData', modelDataUrl);
+        pairs.forEach(p => {
+            params.append('model', p.modelUrl);
+            if (p.modelDataUrl) params.append('modelData', p.modelDataUrl);
+        });
         return `${base}?${params.toString()}`;
     }
 
     loadBtn.addEventListener('click', async () => {
-        const modelUrl = modelUrlInput.value.trim();
-        const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
-        if (!modelUrl) {
-            setValidation(modelUrlValidation, 'Model URL is required');
-            setValidation(modelDataUrlValidation);
+        const pairs = getModelPairsFromRows();
+        if (pairs.length === 0) {
+            const firstRow = getRows()[0];
+            const urlValidation = firstRow?.querySelector('.load-model-url-validation');
+            setValidation(urlValidation, 'Model URL is required');
             return;
         }
-        const modelDataUrl = modelDataUrlInput.value.trim() || undefined;
-        const modelUrlInvalid = !isValidUrl(modelUrl);
-        const modelDataUrlInvalid = modelDataUrl && !isValidUrl(modelDataUrl);
-        if (modelUrlInvalid) {
-            setValidation(modelUrlValidation, 'URL format may be invalid (e.g. https://...)', true);
-        } else {
-            setValidation(modelUrlValidation);
-        }
-        if (modelDataUrlInvalid) {
-            setValidation(modelDataUrlValidation, 'ModelData URL format may be invalid', true);
-        } else {
-            setValidation(modelDataUrlValidation);
-        }
-        const name = modelUrl.split('/').pop().split('?')[0] || 'model';
-        const nextIndex = (modelsManager.modelsData.filter(m => m.id && m.id.startsWith('url_')).length) || 0;
-        const id = `url_${nextIndex}_${name}`;
-        modelsManager.modelsData.push({
-            id,
-            name,
-            url: modelUrl,
-            key: null,
-            metadataUrl: modelDataUrl
-        });
+        const nextBaseIndex = (modelsManager.modelsData.filter(m => m.id && m.id.startsWith('url_')).length) || 0;
         closeModal();
-        await modelsManager.loadModel(id);
+        for (let i = 0; i < pairs.length; i++) {
+            const { modelUrl, modelDataUrl } = pairs[i];
+            const parsed = modelUrl.split('/').pop().split('?')[0] || '';
+            const name = parsed.toLowerCase().includes('.xkt') ? parsed : (pairs.length > 1 ? `model_${i}` : 'model');
+            const id = `url_${nextBaseIndex + i}_${name}`;
+            modelsManager.modelsData.push({
+                id,
+                name,
+                url: modelUrl,
+                key: null,
+                metadataUrl: modelDataUrl || undefined
+            });
+            await modelsManager.loadModel(id);
+        }
         if (treeView && treeView.currentTab === 'models') {
             treeView.buildTree();
         }
     });
 
     openBtn.addEventListener('click', () => {
-        const modelUrl = modelUrlInput.value.trim();
-        const modelDataUrlValidation = document.getElementById('loadModelDataUrlValidation');
-        if (!modelUrl) {
-            setValidation(modelUrlValidation, 'Model URL is required');
-            setValidation(modelDataUrlValidation);
+        const pairs = getModelPairsFromRows();
+        if (pairs.length === 0) {
+            const firstRow = getRows()[0];
+            const urlValidation = firstRow?.querySelector('.load-model-url-validation');
+            setValidation(urlValidation, 'Model URL is required');
             return;
         }
-        const modelDataUrl = modelDataUrlInput.value.trim() || undefined;
-        const modelUrlInvalid = !isValidUrl(modelUrl);
-        const modelDataUrlInvalid = modelDataUrl && !isValidUrl(modelDataUrl);
-        if (modelUrlInvalid) {
-            setValidation(modelUrlValidation, 'URL format may be invalid (e.g. https://...)', true);
-        } else {
-            setValidation(modelUrlValidation);
-        }
-        if (modelDataUrlInvalid) {
-            setValidation(modelDataUrlValidation, 'ModelData URL format may be invalid', true);
-        } else {
-            setValidation(modelDataUrlValidation);
-        }
-        const url = buildSingleModelUrlFromInputs();
+        const url = buildMultiModelUrlFromInputs();
         window.open(url, '_blank');
         closeModal();
     });
+
+    // Initial bind for the first row (from HTML)
+    getRows().forEach(r => _bindRowEvents(r));
+    _updateRemoveButtons();
 }
 
 // Initialize models manager and tree view after DOM is ready
@@ -270,33 +303,23 @@ document.addEventListener('DOMContentLoaded', async () => {
     // Parse URL params: single model mode (exactly one model param) vs main mode
     const params = new URLSearchParams(window.location.search);
     const modelParamValues = params.getAll('model');
-    const modelDataParam = params.get('modelData');
+    const modelDataParamValues = params.getAll('modelData');
     const singleModelMode = modelParamValues.length === 1;
+    const urlModelsMode = modelParamValues.length > 0;
     window.singleModelMode = singleModelMode;
+    window.urlModelsMode = urlModelsMode;
 
     const urlModelIds = [];
     try {
-        if (singleModelMode) {
-            const url = decodeURIComponent(modelParamValues[0]).trim();
-            const metadataUrl = modelDataParam ? decodeURIComponent(modelDataParam).trim() : null;
-            const name = url.split('/').pop().split('?')[0] || 'model_0';
-            const id = `url_0_${name}`;
-            modelsManager.modelsData.push({
-                id,
-                name,
-                url,
-                key: null,
-                metadataUrl: metadataUrl || undefined
-            });
-            urlModelIds.push(id);
-        } else if (modelParamValues.length > 0) {
+        if (modelParamValues.length > 0) {
             const seen = new Set();
             modelParamValues.forEach((urlEncoded, index) => {
                 const url = decodeURIComponent(urlEncoded).trim();
                 if (!url || seen.has(url)) return;
                 seen.add(url);
-                const metadataUrl = (index === 0 && modelDataParam) ? decodeURIComponent(modelDataParam).trim() : null;
-                const name = url.split('/').pop().split('?')[0] || `model_${index}`;
+                const metadataUrl = (modelDataParamValues[index]) ? decodeURIComponent(modelDataParamValues[index]).trim() : null;
+                const parsed = url.split('/').pop().split('?')[0] || '';
+                const name = parsed.toLowerCase().includes('.xkt') ? parsed : `model_${index}`;
                 const id = `url_${index}_${name}`;
                 modelsManager.modelsData.push({
                     id,
@@ -336,8 +359,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     });
 
-    // Set initial tab: single model mode -> storeys (Objects tree), main mode -> models
-    treeView.switchTab(singleModelMode ? 'storeys' : 'models');
+    // Set initial tab: url models mode -> storeys (Objects tree), main mode -> models
+    treeView.switchTab(urlModelsMode ? 'storeys' : 'models');
 
     // Make treeView available globally for ModelsManager
     window.treeView = treeView;
