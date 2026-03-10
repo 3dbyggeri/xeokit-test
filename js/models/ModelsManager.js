@@ -563,8 +563,10 @@ export class ModelsManager {
                     if (propRes.ok) {
                         const text = await propRes.text();
                         const propData = JSON.parse(text);
-                        window.modelProperties = propData.Properties || propData.properties || null;
-                        window.modelLegend = propData.Legend || propData.legend || null;
+                        if (!window.modelPropertiesByModel) window.modelPropertiesByModel = {};
+                        if (!window.modelLegendByModel) window.modelLegendByModel = {};
+                        window.modelPropertiesByModel[modelId] = propData.Properties || propData.properties || null;
+                        window.modelLegendByModel[modelId] = propData.Legend || propData.legend || null;
                         this.loadedModelsTreeData[modelId] = propData.TreeView || propData.treeView || null;
                         // Extract model name from metadata (e.g. for Google Drive URLs where URL has no .xkt filename)
                         const metadataName = propData?.ProjectInfo?.Main?.ProjectInfor?.ModelName;
@@ -577,8 +579,8 @@ export class ModelsManager {
                         }
                         console.log('Loaded properties for model from metadataUrl:', modelId);
                     } else {
-                        window.modelProperties = null;
-                        window.modelLegend = null;
+                        if (window.modelPropertiesByModel) window.modelPropertiesByModel[modelId] = null;
+                        if (window.modelLegendByModel) window.modelLegendByModel[modelId] = null;
                         this.loadedModelsTreeData[modelId] = null;
                         console.warn('Failed to fetch metadata from metadataUrl:', modelInfo.metadataUrl);
                     }
@@ -606,8 +608,10 @@ export class ModelsManager {
                         }
                         if (propRes.ok) {
                             const propData = await propRes.json();
-                            window.modelProperties = propData.properties;
-                            window.modelLegend = propData.legend;
+                            if (!window.modelPropertiesByModel) window.modelPropertiesByModel = {};
+                            if (!window.modelLegendByModel) window.modelLegendByModel = {};
+                            window.modelPropertiesByModel[modelId] = propData.properties;
+                            window.modelLegendByModel[modelId] = propData.legend;
                             this.loadedModelsTreeData[modelId] = propData.treeView || null;
                             if (window.treeView && window.treeView.currentTab === 'storeys') {
                                 window.treeView.buildTree();
@@ -618,15 +622,15 @@ export class ModelsManager {
                             }
                         } else {
                             console.warn(`Failed to load properties for model from both S3 and MongoDB:`, modelName);
-                            window.modelProperties = null;
-                            window.modelLegend = null;
+                            if (window.modelPropertiesByModel) window.modelPropertiesByModel[modelId] = null;
+                            if (window.modelLegendByModel) window.modelLegendByModel[modelId] = null;
                         }
                     }
                 }
             } catch (error) {
                 console.error('Error loading model metadata:', error);
-                window.modelProperties = null;
-                window.modelLegend = null;
+                if (window.modelPropertiesByModel) window.modelPropertiesByModel[modelId] = null;
+                if (window.modelLegendByModel) window.modelLegendByModel[modelId] = null;
             }
 
             // Update checkbox state
@@ -666,8 +670,10 @@ export class ModelsManager {
 
             this.loadedModels.delete(modelId);
 
-            // Clean up tree data for this model
+            // Clean up tree data and per-model properties for this model
             delete this.loadedModelsTreeData[modelId];
+            if (window.modelPropertiesByModel) delete window.modelPropertiesByModel[modelId];
+            if (window.modelLegendByModel) delete window.modelLegendByModel[modelId];
 
             console.log('ModelsManager: Model unloaded successfully:', modelId);
 

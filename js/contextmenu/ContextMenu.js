@@ -252,7 +252,7 @@ export class ObjectContextMenu extends ContextMenu {
                     getTitle: () => "Inspect Properties",
                     doAction: (context) => {
                         if (context.showProperties) {
-                            context.showProperties(context.entity.id);
+                            context.showProperties(context.entity);
                         }
                     }
                 },
