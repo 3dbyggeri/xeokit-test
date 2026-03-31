@@ -1161,6 +1161,86 @@ app.get('/api/glasshouse/projects/:projectId/models', async (req, res) => {
     }
 });
 
+// Get property sets for a project endpoint (supports conditional-formatting payload discovery)
+app.get('/api/glasshouse/projects/:projectId/property-sets', async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const apiKey = req.headers['access-token'] || req.headers['authorization'];
+        const server = req.query.server || 'app.glasshousebim.com';
+        const includeConditionalFormatting = req.query.include_conditional_formatting;
+        const inspectShape = req.query.inspect_shape === 'true';
+
+        if (!apiKey) {
+            return res.status(401).json({ error: 'API key required' });
+        }
+
+        const requestParams = {};
+        if (typeof includeConditionalFormatting !== 'undefined') {
+            requestParams.include_conditional_formatting = includeConditionalFormatting;
+        }
+
+        const url = `https://${server}/api/v1/projects/${projectId}/property_sets.json`;
+        console.log(`Getting property sets for project ${projectId} from ${server}`);
+
+        const response = await axios.get(url, {
+            headers: {
+                'access-token': apiKey,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            params: requestParams,
+            timeout: 20000
+        });
+
+        const payload = response.data || {};
+        const propertySets = Array.isArray(payload.property_sets) ? payload.property_sets : [];
+        const sampleSet = propertySets[0] || null;
+        const sampleBimProperty = sampleSet && Array.isArray(sampleSet.bim_properties) ? (sampleSet.bim_properties[0] || null) : null;
+        const shapeSummary = {
+            topLevelKeys: Object.keys(payload),
+            propertySetCount: propertySets.length,
+            propertySetKeys: sampleSet ? Object.keys(sampleSet) : [],
+            bimPropertyCountInFirstSet: sampleSet && Array.isArray(sampleSet.bim_properties) ? sampleSet.bim_properties.length : 0,
+            bimPropertyKeys: sampleBimProperty ? Object.keys(sampleBimProperty) : []
+        };
+
+        console.log('Property sets payload shape summary:', shapeSummary);
+
+        const passthrough = {
+            success: true,
+            projectId,
+            include_conditional_formatting: includeConditionalFormatting,
+            ...payload
+        };
+
+        if (inspectShape) {
+            passthrough._payloadShape = shapeSummary;
+        }
+
+        res.json(passthrough);
+    } catch (error) {
+        console.error('Error getting property sets:', {
+            message: error.message,
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            url: error.config?.url,
+            method: error.config?.method,
+            params: error.config?.params,
+            responseData: error.response?.data
+        });
+
+        res.status(error.response?.status || 500).json({
+            error: 'Failed to get property sets',
+            details: {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                responseData: error.response?.data
+            }
+        });
+    }
+});
+
 // Import project changes endpoint
 app.post('/api/glasshouse/import/project-changes', async (req, res) => {
     try {
