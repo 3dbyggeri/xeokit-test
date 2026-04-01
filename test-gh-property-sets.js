@@ -60,6 +60,109 @@ function collectConditionalColorSamples(propertySets, maxSamples = 8) {
   return samples;
 }
 
+function isHexColor(value) {
+  if (!value) return false;
+  const text = String(value).trim();
+  return /^#?[0-9a-fA-F]{6}$/.test(text);
+}
+
+function resolveByPath(obj, path) {
+  return path.split(".").reduce((acc, part) => (acc && acc[part] !== undefined ? acc[part] : undefined), obj);
+}
+
+function discoverConditionalFormattingShape(propertySets) {
+  const propertyArrayCandidates = ["properties", "bim_properties"];
+  const ruleContainerCandidates = [
+    "conditional_formatting_rules",
+    "conditional_formatting",
+    "formatting_rules",
+    "rules",
+    "value_colors",
+  ];
+  const propertyNameCandidates = ["human_name", "original_name", "name", "display_name", "label", "title"];
+  const propertyKeyCandidates = ["name", "original_name", "human_name", "id", "key", "guid"];
+  const ruleValueCandidates = ["value", "name", "label", "match_value", "property_value", "text"];
+  const colorCandidates = ["background_color", "color", "hex", "value_hex", "font_color"];
+
+  const metrics = {
+    propertyArrays: Object.fromEntries(propertyArrayCandidates.map((k) => [k, 0])),
+    ruleContainers: Object.fromEntries(ruleContainerCandidates.map((k) => [k, 0])),
+    propertyNames: Object.fromEntries(propertyNameCandidates.map((k) => [k, 0])),
+    propertyKeys: Object.fromEntries(propertyKeyCandidates.map((k) => [k, 0])),
+    ruleValueKeys: Object.fromEntries(ruleValueCandidates.map((k) => [k, 0])),
+    colorKeys: Object.fromEntries(colorCandidates.map((k) => [k, 0])),
+    validHexByColorKey: Object.fromEntries(colorCandidates.map((k) => [k, 0])),
+    totalPropertiesScanned: 0,
+    totalRulesScanned: 0,
+  };
+
+  propertySets.forEach((set) => {
+    const discoveredArrayKey = propertyArrayCandidates.find((key) => Array.isArray(set?.[key]));
+    if (!discoveredArrayKey) return;
+    metrics.propertyArrays[discoveredArrayKey]++;
+
+    const properties = set[discoveredArrayKey];
+    properties.forEach((prop) => {
+      metrics.totalPropertiesScanned++;
+
+      propertyNameCandidates.forEach((key) => {
+        if (prop?.[key] !== undefined && prop?.[key] !== null && String(prop[key]).trim() !== "") {
+          metrics.propertyNames[key]++;
+        }
+      });
+      propertyKeyCandidates.forEach((key) => {
+        if (prop?.[key] !== undefined && prop?.[key] !== null && String(prop[key]).trim() !== "") {
+          metrics.propertyKeys[key]++;
+        }
+      });
+
+      const discoveredRuleKey = ruleContainerCandidates.find((key) => prop?.[key] && typeof prop[key] === "object");
+      if (!discoveredRuleKey) return;
+      metrics.ruleContainers[discoveredRuleKey]++;
+
+      const rawRules = prop[discoveredRuleKey];
+      const entries = Array.isArray(rawRules)
+        ? rawRules.map((rule, idx) => [String(idx), rule])
+        : Object.entries(rawRules);
+
+      entries.forEach(([mapKey, ruleDef]) => {
+        metrics.totalRulesScanned++;
+        const ruleObj = ruleDef && typeof ruleDef === "object" ? ruleDef : {};
+        ruleValueCandidates.forEach((key) => {
+          if (ruleObj[key] !== undefined && ruleObj[key] !== null && String(ruleObj[key]).trim() !== "") {
+            metrics.ruleValueKeys[key]++;
+          }
+        });
+        colorCandidates.forEach((key) => {
+          if (ruleObj[key] !== undefined && ruleObj[key] !== null && String(ruleObj[key]).trim() !== "") {
+            metrics.colorKeys[key]++;
+            if (isHexColor(ruleObj[key])) {
+              metrics.validHexByColorKey[key]++;
+            }
+          }
+        });
+
+        if (mapKey && String(mapKey).trim() !== "") {
+          metrics.ruleValueKeys["<map-key>"] = (metrics.ruleValueKeys["<map-key>"] || 0) + 1;
+        }
+      });
+    });
+  });
+
+  const bestKey = (obj) => Object.entries(obj).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
+  const recommended = {
+    propertyArrayKey: bestKey(metrics.propertyArrays),
+    ruleContainerKey: bestKey(metrics.ruleContainers),
+    propertyNameKey: bestKey(metrics.propertyNames),
+    propertyKeyKey: bestKey(metrics.propertyKeys),
+    ruleValueKey: bestKey(metrics.ruleValueKeys),
+    colorKey: bestKey(metrics.validHexByColorKey),
+  };
+
+  return { metrics, recommended };
+}
+
 async function main() {
   const email = arg("email");
   const password = arg("password");
@@ -154,6 +257,23 @@ async function main() {
       });
       console.log("sample source paths:");
       colorSamples.forEach((sample) => console.log(" -", sample.sourcePath));
+    }
+
+    const discovery = discoverConditionalFormattingShape(sets);
+    console.log("\n=== SCHEMA DISCOVERY REPORT ===");
+    console.log(JSON.stringify(discovery.metrics, null, 2));
+    console.log("\n=== RECOMMENDED CANONICAL KEYS ===");
+    console.log(JSON.stringify(discovery.recommended, null, 2));
+
+    const hasRecommendation =
+      discovery.recommended.propertyArrayKey &&
+      discovery.recommended.ruleContainerKey &&
+      discovery.recommended.propertyNameKey &&
+      discovery.recommended.colorKey;
+
+    if (!hasRecommendation) {
+      console.error("\nSchema discovery did not find enough stable keys to lock runtime parser.");
+      process.exit(2);
     }
   } catch (err) {
     const status = err.response?.status;
