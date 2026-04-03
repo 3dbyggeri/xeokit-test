@@ -139,9 +139,13 @@ class Toolbar extends Controller {
                             data-tippy-content="Glasshouse Link - Click to connect" title="Glasshouse Link">
                         <span class="xeokit-glasshouse-counter">0</span>
                     </button>
+                    <!-- Glasshouse Project & Model -->
+                    <button type="button" class="xeokit-glasshouse-project-model xeokit-btn fa fa-cloud fa-2x"
+                            data-tippy-content="Set Glasshouse project and model" title="Set Glasshouse project and model">
+                    </button>
                     <!-- Glasshouse Import button -->
                     <button type="button" class="xeokit-glasshouse-import xeokit-btn fa fa-download fa-2x"
-                            data-tippy-content="Import from Glasshouse (requires connection)" title="Import from Glasshouse">
+                            data-tippy-content="Sync entry links from Glasshouse" title="Sync entry links from Glasshouse">
                     </button>
                     <!-- Conditional Formatting toggle -->
                     <button type="button" class="xeokit-cf-toggle xeokit-btn fa fa-paint-brush fa-2x"
@@ -288,6 +292,7 @@ class Toolbar extends Controller {
         // Glasshouse Import Tool
         this.glasshouseImportTool = new GlasshouseImportTool(this, {
             buttonElement: toolbarElement.querySelector(".xeokit-glasshouse-import"),
+            projectModelButtonElement: toolbarElement.querySelector(".xeokit-glasshouse-project-model"),
             glasshouseLinkTool: this.glasshouseLinkTool
         });
 

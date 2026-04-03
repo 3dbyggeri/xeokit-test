@@ -35,60 +35,21 @@ window.modelLegendByModel = window.modelLegendByModel || {};
 
 // Helper: get properties and legend for an entity (supports multi-model)
 function getPropertiesForEntity(entity) {
-    if (!entity || entity.id === undefined || entity.id === null) return null;
-
-    const modelId = entity.modelId ?? entity.model?.id ?? null;
-
-    let elementId = null;
-    const rawId = String(entity.id);
-    if (entity.originalSystemId !== undefined && entity.originalSystemId !== null && String(entity.originalSystemId).length > 0) {
-        elementId = String(entity.originalSystemId);
-    } else {
-        const bracketMatch = rawId.match(/\[(\d+)\]/);
-        if (bracketMatch) {
-            elementId = bracketMatch[1];
-        } else if (modelId && rawId.startsWith(modelId)) {
-            const hashIdx = rawId.indexOf("#");
-            if (hashIdx === modelId.length) {
-                elementId = rawId.substring(hashIdx + 1);
-            } else {
-                const dotIdx = rawId.indexOf(".", modelId.length);
-                if (dotIdx === modelId.length) {
-                    elementId = rawId.substring(dotIdx + 1);
-                } else {
-                    elementId = rawId;
-                }
-            }
-        } else {
-            elementId = rawId;
-        }
-    }
-
+    if (!entity || !entity.id) return null;
+    const match = entity.id.match(/\[(\d+)\]/);
+    const elementId = match ? match[1] : entity.id;
+    const modelId = entity.modelId || null;
     const byModel = window.modelPropertiesByModel;
     const legendByModel = window.modelLegendByModel;
     if (!byModel) return null;
-
-    const tryLookup = (mid, eid) => {
-        const propsMap = byModel[mid];
-        if (!propsMap || eid === undefined || eid === null) return null;
-        if (propsMap[eid]) {
-            return { props: propsMap[eid], legend: legendByModel?.[mid] || null };
+    if (modelId && byModel[modelId] && byModel[modelId][elementId]) {
+        return { props: byModel[modelId][elementId], legend: legendByModel?.[modelId] || null };
         }
-        const n = Number(eid);
-        if (!Number.isNaN(n) && propsMap[String(n)]) {
-            return { props: propsMap[String(n)], legend: legendByModel?.[mid] || null };
-        }
-        return null;
-    };
-
-    if (modelId) {
-        const hit = tryLookup(modelId, elementId);
-        if (hit) return hit;
-    }
-
     for (const mid of Object.keys(byModel)) {
-        const hit = tryLookup(mid, elementId);
-        if (hit) return hit;
+        const props = byModel[mid];
+        if (props && props[elementId]) {
+            return { props: props[elementId], legend: legendByModel?.[mid] || null };
+    }
     }
     return null;
 }

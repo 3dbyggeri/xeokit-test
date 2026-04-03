@@ -13,6 +13,7 @@ export class GlasshouseImportTool extends Controller {
         }
 
         this._buttonElement = cfg.buttonElement;
+        this._projectModelButtonElement = cfg.projectModelButtonElement || null;
         this._glasshouseLinkTool = cfg.glasshouseLinkTool; // Reference to GlasshouseLinkTool
         
         // Import state
@@ -30,23 +31,37 @@ export class GlasshouseImportTool extends Controller {
     }
 
     _initEvents() {
-        // Button click handler
         this._buttonElement.addEventListener("click", (event) => {
             event.preventDefault();
             event.stopPropagation();
-            
+
             if (!this._glasshouseLinkTool._connected) {
-                alert('Please connect to Glasshouse Link first');
+                alert("Please connect to Glasshouse Link first");
                 return;
             }
-            
-            this._showImportOptions();
+            if (!this._selectedProject || !this._selectedModel) {
+                alert("Select a Glasshouse project and model first (cloud button in the toolbar).");
+                return;
+            }
+            this._importBimObjects();
         });
 
         // Listen for connection state changes
         if (this._glasshouseLinkTool) {
             this._glasshouseLinkTool.on("connected", (connected) => {
                 this._updateButtonState();
+            });
+        }
+
+        if (this._projectModelButtonElement) {
+            this._projectModelButtonElement.addEventListener("click", (event) => {
+                event.preventDefault();
+                event.stopPropagation();
+                if (!this._glasshouseLinkTool._connected) {
+                    alert("Please connect to Glasshouse Link first");
+                    return;
+                }
+                this._showProjectSelector();
             });
         }
     }
@@ -60,26 +75,48 @@ export class GlasshouseImportTool extends Controller {
             this._buttonElement.classList.add('disabled');
         }
 
-        // Update tooltip based on selected project/model
+        if (this._projectModelButtonElement) {
+            if (connected) {
+                this._projectModelButtonElement.classList.remove("disabled");
+            } else {
+                this._projectModelButtonElement.classList.add("disabled");
+            }
+        }
+
         this._updateTooltip();
     }
 
     _updateTooltip() {
-        let tooltip = 'Import from Glasshouse';
-
-        if (this._selectedProject && this._selectedModel) {
-            tooltip = `Import from: ${this._selectedProject.name} / ${this._selectedModel.name}`;
-        } else if (this._selectedProject) {
-            tooltip = `Import from: ${this._selectedProject.name}`;
-        }
-
         const connected = this._glasshouseLinkTool && this._glasshouseLinkTool._connected;
+        const connSuffix = connected ? "" : " (requires connection)";
+
+        let importTooltip;
         if (!connected) {
-            tooltip += ' (requires connection)';
+            importTooltip = `Sync entry links with Glasshouse${connSuffix}`;
+        } else if (this._selectedProject && this._selectedModel) {
+            importTooltip = "Sync entry links with Glasshouse";
+        } else if (this._selectedProject) {
+            importTooltip = "Sync entry links — choose a model (cloud button)";
+        } else {
+            importTooltip = "Sync entry links — set project and model first (cloud button)";
         }
 
-        this._buttonElement.setAttribute('data-tippy-content', tooltip);
-        this._buttonElement.setAttribute('title', tooltip);
+        this._buttonElement.setAttribute("data-tippy-content", importTooltip);
+        this._buttonElement.setAttribute("title", importTooltip);
+
+        if (this._projectModelButtonElement) {
+            let pmTooltip = "Set Glasshouse project and model";
+            if (this._selectedProject && this._selectedModel) {
+                pmTooltip = `Project: ${this._selectedProject.name} — Model: ${this._selectedModel.name} (click to change)`;
+            } else if (this._selectedProject) {
+                pmTooltip = `Project: ${this._selectedProject.name} — choose a model (click)`;
+            }
+            if (!connected) {
+                pmTooltip += connSuffix;
+            }
+            this._projectModelButtonElement.setAttribute("data-tippy-content", pmTooltip);
+            this._projectModelButtonElement.setAttribute("title", pmTooltip);
+        }
     }
 
     async _loadGlobalSelection() {
@@ -146,126 +183,6 @@ export class GlasshouseImportTool extends Controller {
 
         } catch (error) {
             console.error('Error saving global selection:', error);
-        }
-    }
-
-    _showImportOptions() {
-        // Create dropdown menu for import options (matching section tool style)
-        const menu = document.createElement('div');
-        menu.className = 'xeokit-context-menu';
-        menu.style.display = 'none';
-        menu.style.position = 'fixed';
-        menu.style.zIndex = '10000';
-        menu.style.backgroundColor = '#2c3e50';
-        menu.style.border = '1px solid #34495e';
-        menu.style.borderRadius = '4px';
-        menu.style.boxShadow = '0 4px 8px rgba(0,0,0,0.3)';
-        menu.style.minWidth = '180px';
-        menu.style.padding = '0';
-        menu.style.margin = '0';
-
-        // Create menu list
-        const ul = document.createElement('ul');
-        ul.style.listStyle = 'none';
-        ul.style.margin = '0';
-        ul.style.padding = '0';
-
-        // Menu items data
-        const hasProjectAndModel = this._selectedProject && this._selectedModel;
-        const projectMenuTitle = hasProjectAndModel ? 'Change Project & Model' : 'Set Project & Model';
-        const menuItems = [
-            { action: 'set-project', title: projectMenuTitle },
-            { separator: true },
-            //{ action: 'import-changes', title: 'Import Project Changes', disabled: !hasProjectAndModel },
-            { action: 'import-objects', title: 'Sync Entry Links with Glasshouse', disabled: !hasProjectAndModel }
-        ];
-
-        menuItems.forEach((item, index) => {
-            const li = document.createElement('li');
-
-            if (item.separator) {
-                li.className = 'separator';
-                li.style.borderTop = '1px solid #555';
-                li.style.margin = '0';
-                li.style.height = '1px';
-                li.style.padding = '0';
-                li.style.cursor = 'default';
-                li.style.pointerEvents = 'none';
-            } else {
-                li.textContent = item.title;
-                li.style.padding = '8px 16px';
-                li.style.fontSize = '13px';
-                li.style.borderBottom = index < menuItems.length - 1 && !menuItems[index + 1].separator ? '1px solid #34495e' : 'none';
-
-                if (item.disabled) {
-                    // Disabled state
-                    li.style.cursor = 'not-allowed';
-                    li.style.color = '#6c757d';
-                    li.style.opacity = '0.5';
-                } else {
-                    // Enabled state
-                    li.style.cursor = 'pointer';
-                    li.style.color = '#ecf0f1';
-
-                    // Hover effects
-                    li.addEventListener('mouseenter', () => {
-                        li.style.backgroundColor = '#3498db';
-                    });
-
-                    li.addEventListener('mouseleave', () => {
-                        li.style.backgroundColor = 'transparent';
-                    });
-
-                    // Click handler
-                    li.addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this._handleMenuAction(item.action);
-                        this._hideMenu(menu);
-                    });
-                }
-            }
-
-            ul.appendChild(li);
-        });
-
-        menu.appendChild(ul);
-
-        // Position menu
-        const rect = this._buttonElement.getBoundingClientRect();
-        menu.style.left = rect.left + 'px';
-        menu.style.top = (rect.bottom + 5) + 'px';
-        menu.style.display = 'block';
-
-        document.body.appendChild(menu);
-
-        // Close menu when clicking outside
-        const closeMenu = (e) => {
-            if (!menu.contains(e.target) && !this._buttonElement.contains(e.target)) {
-                this._hideMenu(menu);
-                document.removeEventListener('click', closeMenu);
-            }
-        };
-
-        setTimeout(() => document.addEventListener('click', closeMenu), 100);
-    }
-
-    _hideMenu(menu) {
-        if (menu && menu.parentNode) {
-            menu.parentNode.removeChild(menu);
-        }
-    }
-
-    _handleMenuAction(action) {
-        switch (action) {
-            case 'set-project':
-                this._showProjectSelector();
-                break;
-            case 'import-changes':
-                this._importProjectChanges();
-                break;
-            case 'import-objects':
-                this._importBimObjects();
-                break;
         }
     }
 
@@ -428,7 +345,6 @@ export class GlasshouseImportTool extends Controller {
             // Save global selection to server
             this._saveGlobalSelection();
 
-            alert(`Selected: ${selectedProject.name} - ${selectedModelName}`);
             document.body.removeChild(modal);
         });
         

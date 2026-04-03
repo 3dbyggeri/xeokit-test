@@ -77,7 +77,11 @@ export class ConditionalFormattingTool extends Controller {
         this._toggleButtonElement.classList.toggle("active", this._active);
 
         const toggleTitle = this._active ? "Disable Conditional Formatting" : "Enable Conditional Formatting";
-        const settingsTitle = this._active ? "Conditional Formatting Settings" : "Conditional Formatting Settings (activate first)";
+        const propName = this._selectedProperty?.name;
+        const propSuffix = propName ? ` — ${propName}` : "";
+        const settingsTitle = this._active
+            ? `Conditional Formatting Settings${propSuffix}`
+            : `Conditional Formatting Settings (activate first)${propSuffix}`;
 
         this._toggleButtonElement.setAttribute("title", toggleTitle);
         this._toggleButtonElement.setAttribute("data-tippy-content", toggleTitle);
@@ -112,7 +116,7 @@ export class ConditionalFormattingTool extends Controller {
 
         const selectedProject = this._glasshouseImportTool?._selectedProject;
         if (!selectedProject?.id) {
-            alert("Please select a Glasshouse project first in Import.");
+            alert("Please select a Glasshouse project first (cloud button in the toolbar).");
             return;
         }
 
@@ -219,10 +223,40 @@ export class ConditionalFormattingTool extends Controller {
                 return;
             }
 
-            parsedRules.push({ normalizedValue, hex });
+            const displayLabel = String(valueCandidate).trim() || normalizedValue;
+            parsedRules.push({ normalizedValue, hex, displayLabel });
         });
 
         return parsedRules;
+    }
+
+    _escapeHtml(text) {
+        const div = document.createElement("div");
+        div.textContent = text == null ? "" : String(text);
+        return div.innerHTML;
+    }
+
+    _renderRulesListMarkup(rules) {
+        if (!rules || !rules.length) {
+            return `<div class="xeokit-cf-rules-empty">No color rules for this property.</div>`;
+        }
+        const sorted = [...rules].sort((a, b) =>
+            (a.displayLabel || "").localeCompare(b.displayLabel || "", undefined, { sensitivity: "base" })
+        );
+        return `
+            <div class="xeokit-cf-rules-list" role="listbox" aria-label="Conditional formatting rules">
+                ${sorted
+                    .map(
+                        (rule) => `
+                    <div class="xeokit-cf-rule-row" role="option" aria-selected="false">
+                        <span class="xeokit-cf-rule-swatch" style="background-color:${rule.hex}" title="${this._escapeHtml(rule.hex)}"></span>
+                        <span class="xeokit-cf-rule-label">${this._escapeHtml(rule.displayLabel)}</span>
+                        <code class="xeokit-cf-rule-hex">${this._escapeHtml(rule.hex)}</code>
+                    </div>`
+                    )
+                    .join("")}
+            </div>
+        `;
     }
 
     _showSettingsDialog(propertyOptions) {
@@ -239,10 +273,13 @@ export class ConditionalFormattingTool extends Controller {
                         <label>Property:</label>
                         <select id="xeokit-cf-property-select" class="form-control">
                             <option value="">Select property...</option>
-                            ${propertyOptions.map((option, idx) => `<option value="${idx}">${option.name}</option>`).join("")}
+                            ${propertyOptions.map((option, idx) => `<option value="${idx}">${this._escapeHtml(option.name)}</option>`).join("")}
                         </select>
                     </div>
-                    <div id="xeokit-cf-rule-preview" style="margin-top: 8px; font-size: 12px; color: #666;"></div>
+                    <div class="form-group xeokit-cf-rules-form-group">
+                        <label>Rules (read-only):</label>
+                        <div id="xeokit-cf-rule-preview" class="xeokit-cf-rules-panel"></div>
+                    </div>
                 </div>
                 <div class="xeokit-modal-footer">
                     <button class="xeokit-button xeokit-button-cancel">Cancel</button>
@@ -263,12 +300,19 @@ export class ConditionalFormattingTool extends Controller {
         const rulePreview = modal.querySelector("#xeokit-cf-rule-preview");
         const applyButton = modal.querySelector("#xeokit-cf-apply-btn");
 
-        propertySelect.addEventListener("change", () => {
+        const syncRulesPanel = () => {
             const selectedIndex = Number(propertySelect.value);
             const option = Number.isFinite(selectedIndex) ? propertyOptions[selectedIndex] : null;
             applyButton.disabled = !option;
-            rulePreview.textContent = option ? `${option.rules.length} rule(s) available` : "";
-        });
+            if (!option) {
+                rulePreview.innerHTML = `<div class="xeokit-cf-rules-empty">Select a property to list value-to-color rules from Glasshouse.</div>`;
+                return;
+            }
+            rulePreview.innerHTML = this._renderRulesListMarkup(option.rules);
+        };
+
+        propertySelect.addEventListener("change", syncRulesPanel);
+        syncRulesPanel();
 
         applyButton.addEventListener("click", () => {
             const selectedIndex = Number(propertySelect.value);
