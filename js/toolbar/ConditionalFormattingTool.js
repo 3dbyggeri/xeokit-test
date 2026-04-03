@@ -259,6 +259,51 @@ export class ConditionalFormattingTool extends Controller {
         `;
     }
 
+    /**
+     * Parses the property select value. Empty string must not become index 0 (Number("") === 0 in JS).
+     */
+    _getSelectedPropertyOptionFromSelect(propertySelect, propertyOptions) {
+        const raw = propertySelect.value;
+        if (raw === "" || raw == null) {
+            return null;
+        }
+        const idx = Number(raw);
+        if (!Number.isFinite(idx) || idx < 0 || idx >= propertyOptions.length) {
+            return null;
+        }
+        return propertyOptions[idx];
+    }
+
+    /**
+     * Prefer the property already used for formatting, else "Category" if present, else none.
+     */
+    _resolveDefaultPropertyIndex(propertyOptions) {
+        if (this._selectedProperty) {
+            const wantKey = this._selectedProperty.key;
+            if (wantKey != null && wantKey !== "") {
+                for (let i = 0; i < propertyOptions.length; i++) {
+                    if (propertyOptions[i].key === wantKey) {
+                        return i;
+                    }
+                }
+            }
+            const wantName = this._normalizeValue(this._selectedProperty.name || "");
+            if (wantName) {
+                for (let i = 0; i < propertyOptions.length; i++) {
+                    if (this._normalizeValue(propertyOptions[i].name) === wantName) {
+                        return i;
+                    }
+                }
+            }
+        }
+        for (let i = 0; i < propertyOptions.length; i++) {
+            if (this._normalizeValue(propertyOptions[i].name) === "category") {
+                return i;
+            }
+        }
+        return -1;
+    }
+
     _showSettingsDialog(propertyOptions) {
         const modal = document.createElement("div");
         modal.className = "xeokit-modal-backdrop";
@@ -300,9 +345,13 @@ export class ConditionalFormattingTool extends Controller {
         const rulePreview = modal.querySelector("#xeokit-cf-rule-preview");
         const applyButton = modal.querySelector("#xeokit-cf-apply-btn");
 
+        const defaultIdx = this._resolveDefaultPropertyIndex(propertyOptions);
+        if (defaultIdx >= 0) {
+            propertySelect.value = String(defaultIdx);
+        }
+
         const syncRulesPanel = () => {
-            const selectedIndex = Number(propertySelect.value);
-            const option = Number.isFinite(selectedIndex) ? propertyOptions[selectedIndex] : null;
+            const option = this._getSelectedPropertyOptionFromSelect(propertySelect, propertyOptions);
             applyButton.disabled = !option;
             if (!option) {
                 rulePreview.innerHTML = `<div class="xeokit-cf-rules-empty">Select a property to list value-to-color rules from Glasshouse.</div>`;
@@ -315,8 +364,7 @@ export class ConditionalFormattingTool extends Controller {
         syncRulesPanel();
 
         applyButton.addEventListener("click", () => {
-            const selectedIndex = Number(propertySelect.value);
-            const option = Number.isFinite(selectedIndex) ? propertyOptions[selectedIndex] : null;
+            const option = this._getSelectedPropertyOptionFromSelect(propertySelect, propertyOptions);
             if (!option) {
                 return;
             }
