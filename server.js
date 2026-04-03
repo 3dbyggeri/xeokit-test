@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const axios = require('axios');
 const multer = require('multer');
 
@@ -1091,6 +1092,43 @@ app.post('/api/test/send-isolate', async (req, res) => {
     } catch (error) {
         console.error('Test send-isolate error:', error.message);
         res.status(500).json({ error: 'Failed to send isolate message' });
+    }
+});
+
+function loadAppColorsSettingsFromDisk() {
+    const settingsPath = path.join(__dirname, 'appColorsSettings.json');
+    try {
+        const raw = fs.readFileSync(settingsPath, 'utf8');
+        const parsed = JSON.parse(raw);
+        return {
+            configuration: parsed.configuration || {},
+            defaultConditionalFormattingRules: parsed.defaultConditionalFormattingRules || {}
+        };
+    } catch (err) {
+        console.warn('appColorsSettings.json missing or invalid, using built-in fallback:', err.message);
+        return {
+            configuration: {
+                alwaysFetchOnEnable: false,
+                readOnlyRules: true,
+                rulesApiRelativePath: '/api/glasshouse/projects/:projectId/property-sets',
+                rulesApiQuery: 'include_conditional_formatting=true'
+            },
+            defaultConditionalFormattingRules: {}
+        };
+    }
+}
+
+app.get('/api/app-colors-settings', (req, res) => {
+    try {
+        const data = loadAppColorsSettingsFromDisk();
+        res.json({
+            success: true,
+            configuration: data.configuration,
+            defaultConditionalFormattingRules: data.defaultConditionalFormattingRules
+        });
+    } catch (err) {
+        console.error('Error reading app colors settings:', err);
+        res.status(500).json({ error: err.message || 'Failed to load app colors settings' });
     }
 });
 

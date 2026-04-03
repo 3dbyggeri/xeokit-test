@@ -1,7 +1,8 @@
 import { Controller } from "./Controller.js";
 
 /**
- * Conditional Formatting Tool - Applies value-based colors by GH property rules.
+ * Conditional Formatting Tool — colors from Glasshouse API, optional app defaults (appColorsSettings.json),
+ * and in-session edits when readOnlyRules is false.
  */
 export class ConditionalFormattingTool extends Controller {
     constructor(parent, cfg = {}) {
@@ -34,8 +35,254 @@ export class ConditionalFormattingTool extends Controller {
         this._objectColorSnapshots = new Map();
         this._propertyOptions = [];
 
+        this._appColorsConfig = {};
+        this._defaultPropertyOptions = [];
+        this._workingPropertyOptions = [];
+        this._apiSnapshotPropertyOptions = null;
+        this._apiSnapshotLoaded = false;
+        this._snapshotProjectId = undefined;
+
+        this._appColorsSettingsPromise = this._loadAppColorsSettings();
+
         this._initEvents();
         this._updateButtonState();
+    }
+
+    async _loadAppColorsSettings() {
+        try {
+            const res = await fetch("/api/app-colors-settings");
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            const data = await res.json();
+            this._appColorsConfig = data.configuration || {};
+            this._defaultPropertyOptions = this._propertyOptionsFromMinimalMap(
+                data.defaultConditionalFormattingRules || {}
+            );
+        } catch (err) {
+            console.error("ConditionalFormattingTool: failed to load app colors settings", err);
+            this._appColorsConfig = {
+                alwaysFetchOnEnable: false,
+                readOnlyRules: true,
+                rulesApiRelativePath: "/api/glasshouse/projects/:projectId/property-sets",
+                rulesApiQuery: "include_conditional_formatting=true"
+            };
+            this._defaultPropertyOptions = [];
+        }
+        this._rebuildWorkingOptionsFromSnapshots();
+        this._updateButtonState();
+    }
+
+    _isReadOnlyRules() {
+        return this._appColorsConfig.readOnlyRules !== false;
+    }
+
+    _canFetchFromApi() {
+        return !!(this._glasshouseLinkTool?._connected && this._glasshouseLinkTool?._apiKey);
+    }
+
+    _hasStandaloneDefaultRules() {
+        return Array.isArray(this._defaultPropertyOptions) && this._defaultPropertyOptions.length > 0;
+    }
+
+    _buildRulesApiUrl(projectId) {
+        const rel =
+            this._appColorsConfig.rulesApiRelativePath ||
+            "/api/glasshouse/projects/:projectId/property-sets";
+        const q =
+            this._appColorsConfig.rulesApiQuery || "include_conditional_formatting=true";
+        let u = rel.replace(":projectId", encodeURIComponent(projectId));
+        const qStr = q.startsWith("?") ? q.slice(1) : q;
+        u += u.includes("?") ? `&${qStr}` : `?${qStr}`;
+        return u;
+    }
+
+    _propertyOptionsFromMinimalMap(minimalMap) {
+        const options = [];
+        Object.entries(minimalMap || {}).forEach(([propName, valueRules]) => {
+            if (!valueRules || typeof valueRules !== "object") {
+                return;
+            }
+            const rules = [];
+            Object.entries(valueRules).forEach(([val, def]) => {
+                const hex = this._normalizeHexColor(def?.background_color);
+                const normalizedValue = this._normalizeValue(val);
+                if (!normalizedValue || !hex) {
+                    return;
+                }
+                const displayLabel = String(val).trim() || normalizedValue;
+                rules.push({ normalizedValue, hex, displayLabel });
+            });
+            if (!rules.length) {
+                return;
+            }
+            options.push({
+                key: propName,
+                name: propName,
+                rules
+            });
+        });
+
+        const deduped = new Map();
+        options.forEach((opt) => {
+            const identity = `${opt.key || ""}::${this._normalizeValue(opt.name)}`;
+            if (!deduped.has(identity)) {
+                deduped.set(identity, opt);
+            }
+        });
+
+        return Array.from(deduped.values());
+    }
+
+    _cloneOption(opt) {
+        return {
+            key: opt.key,
+            name: opt.name,
+            rules: (opt.rules || []).map((r) => ({ ...r }))
+        };
+    }
+
+    _clonePropertyOptions(opts) {
+        return (opts || []).map((o) => this._cloneOption(o));
+    }
+
+    _mergeRuleLists(baseRules, overlayRules) {
+        const rmap = new Map();
+        (baseRules || []).forEach((r) => rmap.set(r.normalizedValue, { ...r }));
+        (overlayRules || []).forEach((r) => rmap.set(r.normalizedValue, { ...r }));
+        return Array.from(rmap.values());
+    }
+
+    _mergeApiAndDefaultOptions(apiOpts, defaultOpts) {
+        const m = new Map();
+        const keyFor = (o) => this._normalizeValue(o.name);
+        for (const d of defaultOpts) {
+            m.set(keyFor(d), this._cloneOption(d));
+        }
+        for (const a of apiOpts) {
+            const k = keyFor(a);
+            const existing = m.get(k);
+            if (!existing) {
+                m.set(k, this._cloneOption(a));
+            } else {
+                existing.key = a.key || existing.key;
+                existing.rules = this._mergeRuleLists(existing.rules, a.rules);
+            }
+        }
+        return Array.from(m.values());
+    }
+
+    _rebuildWorkingOptionsFromSnapshots() {
+        const def = this._clonePropertyOptions(this._defaultPropertyOptions || []);
+        const api = this._apiSnapshotPropertyOptions;
+
+        if (api != null && api.length > 0) {
+            this._workingPropertyOptions = this._mergeApiAndDefaultOptions(api, def);
+        } else {
+            this._workingPropertyOptions = def;
+        }
+    }
+
+    _invalidateSnapshotIfProjectChanged(projectId) {
+        const pid = projectId == null ? null : projectId;
+        if (pid !== this._snapshotProjectId) {
+            this._snapshotProjectId = pid;
+            this._apiSnapshotLoaded = false;
+            this._apiSnapshotPropertyOptions = null;
+        }
+    }
+
+    async _loadApiSnapshotOnce(projectId) {
+        if (!projectId || !this._canFetchFromApi()) {
+            this._apiSnapshotLoaded = true;
+            this._rebuildWorkingOptionsFromSnapshots();
+            return;
+        }
+        try {
+            const opts = await this._fetchApiPropertyOptions(projectId);
+            this._apiSnapshotPropertyOptions = opts;
+        } catch (err) {
+            console.warn("ConditionalFormattingTool: API snapshot failed", err);
+            if (this._apiSnapshotPropertyOptions == null) {
+                this._apiSnapshotPropertyOptions = [];
+            }
+        }
+        this._apiSnapshotLoaded = true;
+        this._rebuildWorkingOptionsFromSnapshots();
+    }
+
+    async _refreshPropertyOptionsFromApiForEnable(projectId) {
+        if (!this._canFetchFromApi() || !projectId) {
+            this._apiSnapshotPropertyOptions = [];
+            this._rebuildWorkingOptionsFromSnapshots();
+            this._syncRulesMapFromWorkingOptions();
+            return;
+        }
+        try {
+            const opts = await this._fetchApiPropertyOptions(projectId);
+            this._apiSnapshotPropertyOptions = opts;
+        } catch (err) {
+            console.warn("ConditionalFormattingTool: enable fetch failed, using app defaults", err);
+            this._apiSnapshotPropertyOptions = [];
+        }
+        this._rebuildWorkingOptionsFromSnapshots();
+        this._syncRulesMapFromWorkingOptions();
+    }
+
+    _syncRulesMapFromWorkingOptions() {
+        if (!this._selectedProperty || !this._workingPropertyOptions?.length) {
+            return;
+        }
+        const wantKey = this._selectedProperty.key;
+        const wantName = this._normalizeValue(this._selectedProperty.name || "");
+        let opt = this._workingPropertyOptions.find((o) => o.key === wantKey);
+        if (!opt) {
+            opt = this._workingPropertyOptions.find((o) => this._normalizeValue(o.name) === wantName);
+        }
+        if (!opt) {
+            return;
+        }
+        this._rulesMap = new Map();
+        opt.rules.forEach((r) => this._rulesMap.set(r.normalizedValue, r.hex));
+    }
+
+    async _ensureBaselineOptions(projectId) {
+        await this._appColorsSettingsPromise;
+        this._invalidateSnapshotIfProjectChanged(projectId);
+
+        const alwaysOnEnable = !!this._appColorsConfig.alwaysFetchOnEnable;
+        if (!alwaysOnEnable && projectId && this._canFetchFromApi() && !this._apiSnapshotLoaded) {
+            await this._loadApiSnapshotOnce(projectId);
+        } else if (!projectId) {
+            this._rebuildWorkingOptionsFromSnapshots();
+        }
+
+        return this._workingPropertyOptions || [];
+    }
+
+    async _fetchApiPropertyOptions(projectId) {
+        const url = this._buildRulesApiUrl(projectId);
+        const response = await fetch(url, {
+            method: "GET",
+            headers: {
+                "access-token": this._glasshouseLinkTool._apiKey,
+                "Content-Type": "application/json"
+            }
+        });
+
+        if (!response.ok) {
+            const errorPayload = await response.json().catch(() => ({}));
+            throw new Error(errorPayload?.details?.message || errorPayload?.error || `HTTP ${response.status}`);
+        }
+
+        const data = await response.json();
+        const propertySets = Array.isArray(data.property_sets) ? data.property_sets : [];
+        const options = this._extractPropertyOptions(propertySets);
+        console.log("ConditionalFormattingTool: API property options", {
+            propertySetCount: propertySets.length,
+            optionCount: options.length
+        });
+        return options;
     }
 
     _initEvents() {
@@ -70,7 +317,8 @@ export class ConditionalFormattingTool extends Controller {
 
     _updateButtonState() {
         const isConnected = !!this._glasshouseLinkTool?._connected;
-        const baseEnabled = this.getEnabled() && isConnected;
+        const hasDefaults = this._hasStandaloneDefaultRules();
+        const baseEnabled = this.getEnabled() && (isConnected || hasDefaults);
 
         this._toggleButtonElement.classList.toggle("disabled", !baseEnabled);
         this._settingsButtonElement.classList.toggle("disabled", !baseEnabled || !this._active);
@@ -95,10 +343,25 @@ export class ConditionalFormattingTool extends Controller {
             return;
         }
 
+        await this._appColorsSettingsPromise;
+
+        if (this._appColorsConfig.alwaysFetchOnEnable) {
+            const projectId = this._glasshouseImportTool?._selectedProject?.id;
+            await this._refreshPropertyOptionsFromApiForEnable(projectId || null);
+        } else {
+            const projectId = this._glasshouseImportTool?._selectedProject?.id;
+            if (projectId && this._canFetchFromApi() && !this._apiSnapshotLoaded) {
+                this._invalidateSnapshotIfProjectChanged(projectId);
+                await this._loadApiSnapshotOnce(projectId);
+            }
+        }
+
         if (!this._selectedProperty || this._rulesMap.size === 0) {
             await this.openSettings();
             return;
         }
+
+        this._syncRulesMapFromWorkingOptions();
 
         const applied = this._applyFormatting();
         if (applied) {
@@ -109,21 +372,25 @@ export class ConditionalFormattingTool extends Controller {
     }
 
     async openSettings() {
-        if (!this._glasshouseLinkTool?._connected) {
-            alert("Please connect to Glasshouse Link first.");
+        await this._appColorsSettingsPromise;
+
+        const hasDefaults = this._hasStandaloneDefaultRules();
+        const isConnected = !!this._glasshouseLinkTool?._connected;
+        const projectId = this._glasshouseImportTool?._selectedProject?.id || null;
+
+        if (!isConnected && !hasDefaults) {
+            alert("Connect to Glasshouse Link or add default rules in appColorsSettings.json.");
             return;
         }
-
-        const selectedProject = this._glasshouseImportTool?._selectedProject;
-        if (!selectedProject?.id) {
+        if (isConnected && !projectId) {
             alert("Please select a Glasshouse project first (cloud button in the toolbar).");
             return;
         }
 
         try {
-            const propertyOptions = await this._fetchPropertyOptions(selectedProject.id);
+            const propertyOptions = await this._ensureBaselineOptions(isConnected ? projectId : null);
             if (!propertyOptions.length) {
-                alert("No conditional-formatting properties found for this project.");
+                alert("No conditional-formatting properties found. Check the API or appColorsSettings.json defaults.");
                 return;
             }
             this._propertyOptions = propertyOptions;
@@ -132,30 +399,6 @@ export class ConditionalFormattingTool extends Controller {
             console.error("ConditionalFormattingTool: Failed to load settings", error);
             alert(`Failed to load conditional formatting settings: ${error.message}`);
         }
-    }
-
-    async _fetchPropertyOptions(projectId) {
-        const response = await fetch(`/api/glasshouse/projects/${encodeURIComponent(projectId)}/property-sets?include_conditional_formatting=true`, {
-            method: "GET",
-            headers: {
-                "access-token": this._glasshouseLinkTool._apiKey,
-                "Content-Type": "application/json"
-            }
-        });
-
-        if (!response.ok) {
-            const errorPayload = await response.json().catch(() => ({}));
-            throw new Error(errorPayload?.details?.message || errorPayload?.error || `HTTP ${response.status}`);
-        }
-
-        const data = await response.json();
-        const propertySets = Array.isArray(data.property_sets) ? data.property_sets : [];
-        const options = this._extractPropertyOptions(propertySets);
-        console.log("ConditionalFormattingTool: parsed property options", {
-            propertySetCount: propertySets.length,
-            optionCount: options.length
-        });
-        return options;
     }
 
     _extractPropertyOptions(propertySets) {
@@ -236,7 +479,13 @@ export class ConditionalFormattingTool extends Controller {
         return div.innerHTML;
     }
 
-    _renderRulesListMarkup(rules) {
+    _hexForColorInput(hex) {
+        if (!hex) return "#000000";
+        const h = hex.startsWith("#") ? hex : `#${hex}`;
+        return /^#[0-9a-fA-F]{6}$/.test(h) ? h : "#000000";
+    }
+
+    _renderRulesListMarkup(rules, readOnly) {
         if (!rules || !rules.length) {
             return `<div class="xeokit-cf-rules-empty">No color rules for this property.</div>`;
         }
@@ -246,22 +495,23 @@ export class ConditionalFormattingTool extends Controller {
         return `
             <div class="xeokit-cf-rules-list" role="listbox" aria-label="Conditional formatting rules">
                 ${sorted
-                    .map(
-                        (rule) => `
+                    .map((rule) => {
+                        const colorInput = readOnly
+                            ? ""
+                            : `<input type="color" class="xeokit-cf-rule-color" data-nv="${encodeURIComponent(rule.normalizedValue)}" value="${this._escapeHtml(this._hexForColorInput(rule.hex))}" title="Change color" />`;
+                        return `
                     <div class="xeokit-cf-rule-row" role="option" aria-selected="false">
                         <span class="xeokit-cf-rule-swatch" style="background-color:${rule.hex}" title="${this._escapeHtml(rule.hex)}"></span>
                         <span class="xeokit-cf-rule-label">${this._escapeHtml(rule.displayLabel)}</span>
+                        ${colorInput}
                         <code class="xeokit-cf-rule-hex">${this._escapeHtml(rule.hex)}</code>
-                    </div>`
-                    )
+                    </div>`;
+                    })
                     .join("")}
             </div>
         `;
     }
 
-    /**
-     * Parses the property select value. Empty string must not become index 0 (Number("") === 0 in JS).
-     */
     _getSelectedPropertyOptionFromSelect(propertySelect, propertyOptions) {
         const raw = propertySelect.value;
         if (raw === "" || raw == null) {
@@ -274,9 +524,6 @@ export class ConditionalFormattingTool extends Controller {
         return propertyOptions[idx];
     }
 
-    /**
-     * Prefer the property already used for formatting, else "Category" if present, else none.
-     */
     _resolveDefaultPropertyIndex(propertyOptions) {
         if (this._selectedProperty) {
             const wantKey = this._selectedProperty.key;
@@ -305,6 +552,9 @@ export class ConditionalFormattingTool extends Controller {
     }
 
     _showSettingsDialog(propertyOptions) {
+        const readOnly = this._isReadOnlyRules();
+        const rulesLabel = readOnly ? "Rules (read-only):" : "Rules:";
+
         const modal = document.createElement("div");
         modal.className = "xeokit-modal-backdrop";
         modal.innerHTML = `
@@ -322,7 +572,7 @@ export class ConditionalFormattingTool extends Controller {
                         </select>
                     </div>
                     <div class="form-group xeokit-cf-rules-form-group">
-                        <label>Rules (read-only):</label>
+                        <label>${this._escapeHtml(rulesLabel)}</label>
                         <div id="xeokit-cf-rule-preview" class="xeokit-cf-rules-panel"></div>
                     </div>
                 </div>
@@ -354,10 +604,27 @@ export class ConditionalFormattingTool extends Controller {
             const option = this._getSelectedPropertyOptionFromSelect(propertySelect, propertyOptions);
             applyButton.disabled = !option;
             if (!option) {
-                rulePreview.innerHTML = `<div class="xeokit-cf-rules-empty">Select a property to list value-to-color rules from Glasshouse.</div>`;
+                rulePreview.innerHTML = `<div class="xeokit-cf-rules-empty">Select a property to list value-to-color rules.</div>`;
                 return;
             }
-            rulePreview.innerHTML = this._renderRulesListMarkup(option.rules);
+            rulePreview.innerHTML = this._renderRulesListMarkup(option.rules, readOnly);
+
+            if (!readOnly) {
+                rulePreview.querySelectorAll(".xeokit-cf-rule-color").forEach((inp) => {
+                    const row = inp.closest(".xeokit-cf-rule-row");
+                    const swatch = row && row.querySelector(".xeokit-cf-rule-swatch");
+                    const hexBadge = row && row.querySelector(".xeokit-cf-rule-hex");
+                    inp.addEventListener("input", () => {
+                        const hex = this._normalizeHexColor(inp.value);
+                        if (hex && swatch) {
+                            swatch.style.backgroundColor = hex;
+                        }
+                        if (hex && hexBadge) {
+                            hexBadge.textContent = hex;
+                        }
+                    });
+                });
+            }
         };
 
         propertySelect.addEventListener("change", syncRulesPanel);
@@ -368,6 +635,18 @@ export class ConditionalFormattingTool extends Controller {
             if (!option) {
                 return;
             }
+
+            if (!readOnly) {
+                modal.querySelectorAll(".xeokit-cf-rule-color").forEach((inp) => {
+                    const nv = decodeURIComponent(inp.getAttribute("data-nv") || "");
+                    const hex = this._normalizeHexColor(inp.value);
+                    const rule = option.rules.find((r) => r.normalizedValue === nv);
+                    if (rule && hex) {
+                        rule.hex = hex;
+                    }
+                });
+            }
+
             this._selectedProperty = {
                 key: option.key,
                 name: option.name
@@ -469,10 +748,6 @@ export class ConditionalFormattingTool extends Controller {
         }
     }
 
-    /**
-     * All scene objects (no per-model id filter) so rules apply across whatever is loaded.
-     * Skips model-root entities and hidden objects.
-     */
     _getAllObjectIdsForFormatting() {
         const scene = this.viewer.scene;
         if (!Object.keys(scene.models || {}).length) {

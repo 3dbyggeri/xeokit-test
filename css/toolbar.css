@@ -656,6 +656,17 @@ canvas.measure-mode {
     color: #333;
 }
 
+.xeokit-cf-rule-color {
+    flex-shrink: 0;
+    width: 32px;
+    height: 28px;
+    padding: 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+    background: transparent;
+}
+
 .xeokit-cf-rule-row:nth-child(even) {
     background: rgba(0, 0, 0, 0.02);
 }
