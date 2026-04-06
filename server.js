@@ -2,6 +2,9 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
+const stream = require('stream');
+const util = require('util');
+const pipeline = util.promisify(stream.pipeline);
 const axios = require('axios');
 const multer = require('multer');
 
@@ -306,7 +309,7 @@ app.get('/api/modeldata/validate-url', async (req, res) => {
     }
 });
 
-// Proxy endpoint for external XKT URLs (avoids CORS when loading from Dropbox, etc.)
+// Proxy for external XKT/metadata URLs (avoids CORS). Streams upstream — lower Node heap than buffering arraybuffer.
 app.get('/api/modeldata/proxy', async (req, res) => {
     try {
         const targetUrl = req.query.url;
@@ -320,46 +323,86 @@ app.get('/api/modeldata/proxy', async (req, res) => {
             console.log('Proxy: normalized URL for direct download');
         }
 
-        const response = await axios.get(urlToFetch, {
-            responseType: 'arraybuffer',
+        const upstream = await axios({
+            method: 'GET',
+            url: urlToFetch,
+            responseType: 'stream',
             timeout: 120000,
-            maxContentLength: 500 * 1024 * 1024 // 500 MB
+            maxContentLength: 500 * 1024 * 1024,
+            validateStatus: (status) => status >= 200 && status < 300
         });
 
-        console.log('Proxy: XKT loaded successfully', { url: urlToFetch, sizeBytes: response.data.length });
+        const ct = upstream.headers['content-type'] || 'application/octet-stream';
+        res.setHeader('Content-Type', ct);
+        if (upstream.headers['content-length']) {
+            res.setHeader('Content-Length', upstream.headers['content-length']);
+        }
 
-        res.setHeader('Content-Type', 'application/octet-stream');
-        res.setHeader('Content-Length', response.data.length);
-        res.send(response.data);
+        const readStream = upstream.data;
+        readStream.on('error', (err) => {
+            console.error('Proxy: upstream stream error', { url: urlToFetch, error: err.message });
+            if (!res.headersSent) {
+                res.status(502).json({ error: 'Upstream stream error', message: err.message });
+            } else {
+                res.destroy(err);
+            }
+        });
+
+        req.on('close', () => {
+            if (readStream && typeof readStream.destroy === 'function') {
+                readStream.destroy();
+            }
+        });
+
+        await pipeline(readStream, res);
+        console.log('Proxy: stream finished', { url: urlToFetch });
     } catch (error) {
-        console.error('Proxy: XKT load failed', { url: req.query.url, error: error.message });
-        res.status(500).json({ error: 'Failed to fetch resource', message: error.message });
+        console.error('Proxy: request failed', { url: req.query.url, error: error.message });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to fetch resource', message: error.message });
+        }
     }
 });
 
-// Proxy endpoint for XKT files
+// XKT from S3 — pipe getObject read stream to response (lower Node heap than buffering Body).
 app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
+    if (!s3) {
+        return res.status(500).json({ error: 'S3 not configured' });
+    }
+
     try {
         const key = decodeURIComponent(req.params.key);
+        const bucket = process.env.S3_BUCKET;
 
-        // Get the object from S3
-        const s3Object = await s3.getObject({
-            Bucket: process.env.S3_BUCKET,
+        const s3Stream = s3.getObject({
+            Bucket: bucket,
             Key: key
-        }).promise();
+        }).createReadStream();
 
-        console.log('XKT from S3: loaded successfully', { key: req.params.key, sizeBytes: s3Object.ContentLength });
+        s3Stream.on('error', (err) => {
+            console.error('XKT from S3: stream error', { key: req.params.key, error: err.message });
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'Error fetching XKT file' });
+            } else {
+                res.destroy(err);
+            }
+        });
 
-        // Set appropriate headers
         res.setHeader('Content-Type', 'application/octet-stream');
-        res.setHeader('Content-Length', s3Object.ContentLength);
 
-        // Send the file data
-        res.send(s3Object.Body);
+        req.on('close', () => {
+            if (s3Stream && typeof s3Stream.destroy === 'function') {
+                s3Stream.destroy();
+            }
+        });
 
+        await pipeline(s3Stream, res);
+        console.log('XKT from S3: stream finished', { key: req.params.key });
     } catch (error) {
         console.error('XKT from S3: load failed', { key: req.params.key, error: error.message });
-        res.status(500).json({ error: 'Error fetching XKT file' });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Error fetching XKT file' });
+        }
     }
 });
 
