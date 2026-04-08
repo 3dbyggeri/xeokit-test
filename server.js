@@ -53,6 +53,10 @@ app.use(express.static(__dirname));
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({ storage: multer.memoryStorage() });
+const syncUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 500 * 1024 * 1024 } // up to 500MB per file
+});
 
 // Initialize mongoose if MongoDB URI is available
 let Project, Model;
@@ -453,6 +457,89 @@ app.post('/api/modeldata/upload', upload.single('file'), async (req, res) => {
         console.error('Error uploading file:', error);
         res.status(500).json({ error: 'Failed to upload file', message: error.message });
     }
+});
+
+// APS -> xeokit sync endpoint (S3-backed): multipart xkt + optional json
+function requireXktSyncAuth(req, res, next) {
+    const key = process.env.XKT_SYNC_API_KEY;
+    if (!key || !String(key).trim()) return next();
+    const auth = req.headers.authorization || '';
+    const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+    if (bearer !== key) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    next();
+}
+
+app.post(
+    '/api/modeldata/sync-from-aps',
+    requireXktSyncAuth,
+    syncUpload.fields([
+        { name: 'xkt', maxCount: 1 },
+        { name: 'json', maxCount: 1 }
+    ]),
+    async (req, res) => {
+        try {
+            if (!s3) {
+                return res.status(500).json({ error: 'S3 not configured' });
+            }
+
+            const xktFile = req.files?.xkt?.[0];
+            if (!xktFile || !xktFile.buffer || !xktFile.buffer.length) {
+                return res.status(400).json({ error: 'Missing xkt file' });
+            }
+
+            const xktName = path.basename(xktFile.originalname || 'model.xkt');
+            if (!xktName.toLowerCase().endsWith('.xkt')) {
+                return res.status(400).json({ error: 'xkt field must be a .xkt file' });
+            }
+
+            const xktKey = xktName;
+            await s3.upload({
+                Bucket: process.env.S3_BUCKET,
+                Key: xktKey,
+                Body: xktFile.buffer,
+                ContentType: xktFile.mimetype || 'application/octet-stream'
+            }).promise();
+
+            let jsonKey = null;
+            const jsonFile = req.files?.json?.[0];
+            if (jsonFile && jsonFile.buffer && jsonFile.buffer.length) {
+                const jsonName = path.basename(jsonFile.originalname || 'model_modelData.json');
+                jsonKey = jsonName;
+                await s3.upload({
+                    Bucket: process.env.S3_BUCKET,
+                    Key: jsonKey,
+                    Body: jsonFile.buffer,
+                    ContentType: jsonFile.mimetype || 'application/json'
+                }).promise();
+            }
+
+            const publicBase = (process.env.XEOKIT_VIEWER_PUBLIC_URL || '').replace(/\/$/, '')
+                || `${req.protocol}://${req.get('host')}`;
+            const openUrl = `${publicBase}/`;
+
+            res.json({
+                success: true,
+                openUrl,
+                xktKey,
+                jsonKey
+            });
+        } catch (error) {
+            console.error('/api/modeldata/sync-from-aps error:', error);
+            res.status(500).json({ error: 'Sync failed', message: error.message });
+        }
+    }
+);
+
+// Quick sync health check (no upload): validates route wiring and required config presence.
+app.get('/api/modeldata/sync-from-aps/health', (req, res) => {
+    res.json({
+        ok: true,
+        route: '/api/modeldata/sync-from-aps',
+        s3Configured: !!s3,
+        authRequired: !!(process.env.XKT_SYNC_API_KEY && String(process.env.XKT_SYNC_API_KEY).trim())
+    });
 });
 
 // Delete files endpoint
