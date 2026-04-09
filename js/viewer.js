@@ -44,12 +44,12 @@ function getPropertiesForEntity(entity) {
     if (!byModel) return null;
     if (modelId && byModel[modelId] && byModel[modelId][elementId]) {
         return { props: byModel[modelId][elementId], legend: legendByModel?.[modelId] || null };
-    }
+        }
     for (const mid of Object.keys(byModel)) {
         const props = byModel[mid];
         if (props && props[elementId]) {
             return { props: props[elementId], legend: legendByModel?.[mid] || null };
-        }
+    }
     }
     return null;
 }

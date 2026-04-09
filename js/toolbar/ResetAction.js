@@ -73,6 +73,11 @@ class ResetAction extends Controller {
             this.parent.measureAngleTool.clearMeasurements();
         }
 
+        // Clear conditional formatting colorization state
+        if (this.parent && this.parent.conditionalFormattingTool) {
+            this.parent.conditionalFormattingTool.clearFormatting();
+        }
+
         // Reset camera to fit all visible objects
         const aabb = scene.getAABB(scene.visibleObjectIds);
         if (aabb) {

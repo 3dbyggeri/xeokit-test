@@ -1,6 +1,10 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
+const stream = require('stream');
+const util = require('util');
+const pipeline = util.promisify(stream.pipeline);
 const axios = require('axios');
 const multer = require('multer');
 
@@ -49,6 +53,10 @@ app.use(express.static(__dirname));
 
 // Configure multer for file uploads (memory storage)
 const upload = multer({ storage: multer.memoryStorage() });
+const syncUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 500 * 1024 * 1024 } // up to 500MB per file
+});
 
 // Initialize mongoose if MongoDB URI is available
 let Project, Model;
@@ -305,7 +313,7 @@ app.get('/api/modeldata/validate-url', async (req, res) => {
     }
 });
 
-// Proxy endpoint for external XKT URLs (avoids CORS when loading from Dropbox, etc.)
+// Proxy for external XKT/metadata URLs (avoids CORS). Streams upstream — lower Node heap than buffering arraybuffer.
 app.get('/api/modeldata/proxy', async (req, res) => {
     try {
         const targetUrl = req.query.url;
@@ -319,46 +327,86 @@ app.get('/api/modeldata/proxy', async (req, res) => {
             console.log('Proxy: normalized URL for direct download');
         }
 
-        const response = await axios.get(urlToFetch, {
-            responseType: 'arraybuffer',
+        const upstream = await axios({
+            method: 'GET',
+            url: urlToFetch,
+            responseType: 'stream',
             timeout: 120000,
-            maxContentLength: 500 * 1024 * 1024 // 500 MB
+            maxContentLength: 500 * 1024 * 1024,
+            validateStatus: (status) => status >= 200 && status < 300
         });
 
-        console.log('Proxy: XKT loaded successfully', { url: urlToFetch, sizeBytes: response.data.length });
+        const ct = upstream.headers['content-type'] || 'application/octet-stream';
+        res.setHeader('Content-Type', ct);
+        if (upstream.headers['content-length']) {
+            res.setHeader('Content-Length', upstream.headers['content-length']);
+        }
 
-        res.setHeader('Content-Type', 'application/octet-stream');
-        res.setHeader('Content-Length', response.data.length);
-        res.send(response.data);
+        const readStream = upstream.data;
+        readStream.on('error', (err) => {
+            console.error('Proxy: upstream stream error', { url: urlToFetch, error: err.message });
+            if (!res.headersSent) {
+                res.status(502).json({ error: 'Upstream stream error', message: err.message });
+            } else {
+                res.destroy(err);
+            }
+        });
+
+        req.on('close', () => {
+            if (readStream && typeof readStream.destroy === 'function') {
+                readStream.destroy();
+            }
+        });
+
+        await pipeline(readStream, res);
+        console.log('Proxy: stream finished', { url: urlToFetch });
     } catch (error) {
-        console.error('Proxy: XKT load failed', { url: req.query.url, error: error.message });
-        res.status(500).json({ error: 'Failed to fetch resource', message: error.message });
+        console.error('Proxy: request failed', { url: req.query.url, error: error.message });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Failed to fetch resource', message: error.message });
+        }
     }
 });
 
-// Proxy endpoint for XKT files
+// XKT from S3 — pipe getObject read stream to response (lower Node heap than buffering Body).
 app.get('/api/modeldata/xkt/:key(*)', async (req, res) => {
+    if (!s3) {
+        return res.status(500).json({ error: 'S3 not configured' });
+    }
+
     try {
         const key = decodeURIComponent(req.params.key);
+        const bucket = process.env.S3_BUCKET;
 
-        // Get the object from S3
-        const s3Object = await s3.getObject({
-            Bucket: process.env.S3_BUCKET,
+        const s3Stream = s3.getObject({
+            Bucket: bucket,
             Key: key
-        }).promise();
+        }).createReadStream();
 
-        console.log('XKT from S3: loaded successfully', { key: req.params.key, sizeBytes: s3Object.ContentLength });
+        s3Stream.on('error', (err) => {
+            console.error('XKT from S3: stream error', { key: req.params.key, error: err.message });
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'Error fetching XKT file' });
+            } else {
+                res.destroy(err);
+            }
+        });
 
-        // Set appropriate headers
         res.setHeader('Content-Type', 'application/octet-stream');
-        res.setHeader('Content-Length', s3Object.ContentLength);
 
-        // Send the file data
-        res.send(s3Object.Body);
+        req.on('close', () => {
+            if (s3Stream && typeof s3Stream.destroy === 'function') {
+                s3Stream.destroy();
+            }
+        });
 
+        await pipeline(s3Stream, res);
+        console.log('XKT from S3: stream finished', { key: req.params.key });
     } catch (error) {
         console.error('XKT from S3: load failed', { key: req.params.key, error: error.message });
-        res.status(500).json({ error: 'Error fetching XKT file' });
+        if (!res.headersSent) {
+            res.status(500).json({ error: 'Error fetching XKT file' });
+        }
     }
 });
 
@@ -409,6 +457,89 @@ app.post('/api/modeldata/upload', upload.single('file'), async (req, res) => {
         console.error('Error uploading file:', error);
         res.status(500).json({ error: 'Failed to upload file', message: error.message });
     }
+});
+
+// APS -> xeokit sync endpoint (S3-backed): multipart xkt + optional json
+function requireXktSyncAuth(req, res, next) {
+    const key = process.env.XKT_SYNC_API_KEY;
+    if (!key || !String(key).trim()) return next();
+    const auth = req.headers.authorization || '';
+    const bearer = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+    if (bearer !== key) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+    next();
+}
+
+app.post(
+    '/api/modeldata/sync-from-aps',
+    requireXktSyncAuth,
+    syncUpload.fields([
+        { name: 'xkt', maxCount: 1 },
+        { name: 'json', maxCount: 1 }
+    ]),
+    async (req, res) => {
+        try {
+            if (!s3) {
+                return res.status(500).json({ error: 'S3 not configured' });
+            }
+
+            const xktFile = req.files?.xkt?.[0];
+            if (!xktFile || !xktFile.buffer || !xktFile.buffer.length) {
+                return res.status(400).json({ error: 'Missing xkt file' });
+            }
+
+            const xktName = path.basename(xktFile.originalname || 'model.xkt');
+            if (!xktName.toLowerCase().endsWith('.xkt')) {
+                return res.status(400).json({ error: 'xkt field must be a .xkt file' });
+            }
+
+            const xktKey = xktName;
+            await s3.upload({
+                Bucket: process.env.S3_BUCKET,
+                Key: xktKey,
+                Body: xktFile.buffer,
+                ContentType: xktFile.mimetype || 'application/octet-stream'
+            }).promise();
+
+            let jsonKey = null;
+            const jsonFile = req.files?.json?.[0];
+            if (jsonFile && jsonFile.buffer && jsonFile.buffer.length) {
+                const jsonName = path.basename(jsonFile.originalname || 'model_modelData.json');
+                jsonKey = jsonName;
+                await s3.upload({
+                    Bucket: process.env.S3_BUCKET,
+                    Key: jsonKey,
+                    Body: jsonFile.buffer,
+                    ContentType: jsonFile.mimetype || 'application/json'
+                }).promise();
+            }
+
+            const publicBase = (process.env.XEOKIT_VIEWER_PUBLIC_URL || '').replace(/\/$/, '')
+                || `${req.protocol}://${req.get('host')}`;
+            const openUrl = `${publicBase}/`;
+
+            res.json({
+                success: true,
+                openUrl,
+                xktKey,
+                jsonKey
+            });
+        } catch (error) {
+            console.error('/api/modeldata/sync-from-aps error:', error);
+            res.status(500).json({ error: 'Sync failed', message: error.message });
+        }
+    }
+);
+
+// Quick sync health check (no upload): validates route wiring and required config presence.
+app.get('/api/modeldata/sync-from-aps/health', (req, res) => {
+    res.json({
+        ok: true,
+        route: '/api/modeldata/sync-from-aps',
+        s3Configured: !!s3,
+        authRequired: !!(process.env.XKT_SYNC_API_KEY && String(process.env.XKT_SYNC_API_KEY).trim())
+    });
 });
 
 // Delete files endpoint
@@ -1094,6 +1225,43 @@ app.post('/api/test/send-isolate', async (req, res) => {
     }
 });
 
+function loadAppColorsSettingsFromDisk() {
+    const settingsPath = path.join(__dirname, 'appColorsSettings.json');
+    try {
+        const raw = fs.readFileSync(settingsPath, 'utf8');
+        const parsed = JSON.parse(raw);
+        return {
+            configuration: parsed.configuration || {},
+            defaultConditionalFormattingRules: parsed.defaultConditionalFormattingRules || {}
+        };
+    } catch (err) {
+        console.warn('appColorsSettings.json missing or invalid, using built-in fallback:', err.message);
+        return {
+            configuration: {
+                alwaysFetchOnEnable: false,
+                readOnlyRules: true,
+                rulesApiRelativePath: '/api/glasshouse/projects/:projectId/property-sets',
+                rulesApiQuery: 'include_conditional_formatting=true'
+            },
+            defaultConditionalFormattingRules: {}
+        };
+    }
+}
+
+app.get('/api/app-colors-settings', (req, res) => {
+    try {
+        const data = loadAppColorsSettingsFromDisk();
+        res.json({
+            success: true,
+            configuration: data.configuration,
+            defaultConditionalFormattingRules: data.defaultConditionalFormattingRules
+        });
+    } catch (err) {
+        console.error('Error reading app colors settings:', err);
+        res.status(500).json({ error: err.message || 'Failed to load app colors settings' });
+    }
+});
+
 // Get projects endpoint
 app.get('/api/glasshouse/projects', async (req, res) => {
     try {
@@ -1157,6 +1325,86 @@ app.get('/api/glasshouse/projects/:projectId/models', async (req, res) => {
         console.error('Error getting models:', error.response?.data || error.message);
         res.status(error.response?.status || 500).json({
             error: error.response?.data?.error || error.message
+        });
+    }
+});
+
+// Get property sets for a project endpoint (supports conditional-formatting payload discovery)
+app.get('/api/glasshouse/projects/:projectId/property-sets', async (req, res) => {
+    try {
+        const { projectId } = req.params;
+        const apiKey = req.headers['access-token'] || req.headers['authorization'];
+        const server = req.query.server || 'app.glasshousebim.com';
+        const includeConditionalFormatting = req.query.include_conditional_formatting;
+        const inspectShape = req.query.inspect_shape === 'true';
+
+        if (!apiKey) {
+            return res.status(401).json({ error: 'API key required' });
+        }
+
+        const requestParams = {};
+        if (typeof includeConditionalFormatting !== 'undefined') {
+            requestParams.include_conditional_formatting = includeConditionalFormatting;
+        }
+
+        const url = `https://${server}/api/v1/projects/${projectId}/property_sets.json`;
+        console.log(`Getting property sets for project ${projectId} from ${server}`);
+
+        const response = await axios.get(url, {
+            headers: {
+                'access-token': apiKey,
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            params: requestParams,
+            timeout: 20000
+        });
+
+        const payload = response.data || {};
+        const propertySets = Array.isArray(payload.property_sets) ? payload.property_sets : [];
+        const sampleSet = propertySets[0] || null;
+        const sampleBimProperty = sampleSet && Array.isArray(sampleSet.bim_properties) ? (sampleSet.bim_properties[0] || null) : null;
+        const shapeSummary = {
+            topLevelKeys: Object.keys(payload),
+            propertySetCount: propertySets.length,
+            propertySetKeys: sampleSet ? Object.keys(sampleSet) : [],
+            bimPropertyCountInFirstSet: sampleSet && Array.isArray(sampleSet.bim_properties) ? sampleSet.bim_properties.length : 0,
+            bimPropertyKeys: sampleBimProperty ? Object.keys(sampleBimProperty) : []
+        };
+
+        console.log('Property sets payload shape summary:', shapeSummary);
+
+        const passthrough = {
+            success: true,
+            projectId,
+            include_conditional_formatting: includeConditionalFormatting,
+            ...payload
+        };
+
+        if (inspectShape) {
+            passthrough._payloadShape = shapeSummary;
+        }
+
+        res.json(passthrough);
+    } catch (error) {
+        console.error('Error getting property sets:', {
+            message: error.message,
+            status: error.response?.status,
+            statusText: error.response?.statusText,
+            url: error.config?.url,
+            method: error.config?.method,
+            params: error.config?.params,
+            responseData: error.response?.data
+        });
+
+        res.status(error.response?.status || 500).json({
+            error: 'Failed to get property sets',
+            details: {
+                message: error.message,
+                status: error.response?.status,
+                statusText: error.response?.statusText,
+                responseData: error.response?.data
+            }
         });
     }
 });

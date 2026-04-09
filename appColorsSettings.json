@@ -1,0 +1,20 @@
+{
+  "configuration": {
+    "alwaysFetchOnEnable": true,
+    "readOnlyRules": false,
+    "rulesApiRelativePath": "/api/glasshouse/projects/:projectId/property-sets",
+    "rulesApiQuery": "include_conditional_formatting=true"
+  },
+  "defaultConditionalFormattingRules": {
+    "Category": {
+      "Walls": { "background_color": "#C8C8C8" },
+      "Doors": { "background_color": "#8B4513" },
+      "Windows": { "background_color": "#87CEEB" },
+      "Floors": { "background_color": "#9E9E9E" },
+      "Roofs": { "background_color": "#696969" },
+      "Ceilings": { "background_color": "#E0E0E0" },
+      "Furniture": { "background_color": "#CD853F" },
+      "Casework": { "background_color": "#D2B48C" }
+    }
+  }
+}

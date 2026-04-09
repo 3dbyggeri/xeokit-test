@@ -14,6 +14,7 @@ import { MeasureAngleTool } from "./MeasureAngleTool.js";
 import { SectionTool } from "./SectionTool.js";
 import { GlasshouseLinkTool } from "./GlasshouseLinkTool.js";
 import { GlasshouseImportTool } from "./GlasshouseImportTool.js";
+import { ConditionalFormattingTool } from "./ConditionalFormattingTool.js";
 
 /**
  * Toolbar Manager - Coordinates all toolbar tools
@@ -138,9 +139,21 @@ class Toolbar extends Controller {
                             data-tippy-content="Glasshouse Link - Click to connect" title="Glasshouse Link">
                         <span class="xeokit-glasshouse-counter">0</span>
                     </button>
+                    <!-- Glasshouse Project & Model -->
+                    <button type="button" class="xeokit-glasshouse-project-model xeokit-btn fa fa-cloud fa-2x"
+                            data-tippy-content="Set Glasshouse project and model" title="Set Glasshouse project and model">
+                    </button>
                     <!-- Glasshouse Import button -->
                     <button type="button" class="xeokit-glasshouse-import xeokit-btn fa fa-download fa-2x"
-                            data-tippy-content="Import from Glasshouse (requires connection)" title="Import from Glasshouse">
+                            data-tippy-content="Sync entry links from Glasshouse" title="Sync entry links from Glasshouse">
+                    </button>
+                    <!-- Conditional Formatting toggle -->
+                    <button type="button" class="xeokit-cf-toggle xeokit-btn fa fa-paint-brush fa-2x"
+                            data-tippy-content="Enable Conditional Formatting" title="Enable Conditional Formatting">
+                    </button>
+                    <!-- Conditional Formatting settings -->
+                    <button type="button" class="xeokit-cf-settings xeokit-btn fa fa-sliders fa-2x"
+                            data-tippy-content="Conditional Formatting Settings" title="Conditional Formatting Settings">
                     </button>
                 </div>
             </div>
@@ -279,7 +292,16 @@ class Toolbar extends Controller {
         // Glasshouse Import Tool
         this.glasshouseImportTool = new GlasshouseImportTool(this, {
             buttonElement: toolbarElement.querySelector(".xeokit-glasshouse-import"),
+            projectModelButtonElement: toolbarElement.querySelector(".xeokit-glasshouse-project-model"),
             glasshouseLinkTool: this.glasshouseLinkTool
+        });
+
+        // Conditional Formatting Tool
+        this.conditionalFormattingTool = new ConditionalFormattingTool(this, {
+            toggleButtonElement: toolbarElement.querySelector(".xeokit-cf-toggle"),
+            settingsButtonElement: toolbarElement.querySelector(".xeokit-cf-settings"),
+            glasshouseLinkTool: this.glasshouseLinkTool,
+            glasshouseImportTool: this.glasshouseImportTool
         });
 
         // Set up mutual exclusion for all interaction tools (including section tool)
@@ -325,6 +347,7 @@ class Toolbar extends Controller {
         // Note: Glasshouse tools are always enabled (like toggle explorer)
         this.glasshouseLinkTool.setEnabled(true);
         this.glasshouseImportTool.setEnabled(true);
+        this.conditionalFormattingTool.setEnabled(true);
     }
 
     /**
@@ -354,6 +377,7 @@ class Toolbar extends Controller {
 
         // Level 5 tools
         this.sectionTool.setEnabled(false);
+        this.conditionalFormattingTool.setEnabled(false);
         // Note: Glasshouse Link tool remains enabled even when no models are loaded
         // this.glasshouseLinkTool.setEnabled(false); // Keep enabled
     }
@@ -402,6 +426,9 @@ class Toolbar extends Controller {
      */
     onModelUnloaded() {
         console.log('Toolbar: onModelUnloaded called, disabling all tools');
+        if (this.conditionalFormattingTool) {
+            this.conditionalFormattingTool.clearFormatting();
+        }
         this._disableAllTools();
     }
 
@@ -506,6 +533,10 @@ class Toolbar extends Controller {
         }
         if (this.measureAngleTool) {
             this.measureAngleTool.destroy();
+        }
+
+        if (this.conditionalFormattingTool) {
+            this.conditionalFormattingTool.destroy();
         }
 
         super.destroy();
