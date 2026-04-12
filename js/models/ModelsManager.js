@@ -1,4 +1,32 @@
 /**
+ * Parse *.xkt file basename from a model URL without extension (handles presigned URLs where the last segment may not be *.xkt).
+ */
+export function parseXktDisplayNameFromUrl(urlString) {
+    if (!urlString || typeof urlString !== "string") {
+        return null;
+    }
+    let decoded = urlString;
+    try {
+        decoded = decodeURIComponent(urlString);
+    } catch (e) {
+        decoded = urlString;
+    }
+    const match = decoded.match(/([^/\\?#]+\.xkt)(?:[?#]|$)/i);
+    if (match && match[1]) {
+        return match[1].replace(/\.xkt$/i, "");
+    }
+    const pathOnly = decoded.split(/[?#]/)[0];
+    const segments = pathOnly.split("/").filter(Boolean);
+    for (let i = segments.length - 1; i >= 0; i--) {
+        const seg = segments[i];
+        if (/\.xkt$/i.test(seg)) {
+            return seg.replace(/\.xkt$/i, "");
+        }
+    }
+    return null;
+}
+
+/**
  * ModelsManager - Handles model loading/unloading and display in the Models tab
  */
 export class ModelsManager {
@@ -18,6 +46,71 @@ export class ModelsManager {
         this.onModelUnloaded = null;
 
         this._initEventHandlers();
+    }
+
+    _stripDisplayExtension(str) {
+        if (!str || typeof str !== "string") {
+            return str;
+        }
+        return str.replace(/\.(rvt|xkt|ifc|nwc|dwg|rfa)$/i, "").trim();
+    }
+
+    _extractNameFromTreeViewData(treeData) {
+        if (!treeData || typeof treeData !== "object") {
+            return null;
+        }
+        const keys = Object.keys(treeData);
+        for (const k of keys) {
+            const m = k.match(/\[Main\]\s*(.+?)\.rvt$/i) || k.match(/\[Main\]\s*(.+)$/i);
+            if (m && m[1]) {
+                return m[1].trim();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * When URL did not yield a display name, set name from metadata / tree / API filename / id.
+     */
+    _applyUrlModelDisplayNameFallbacks(modelInfo, modelId, options = {}) {
+        const { propData = null, modelNameForApi = null } = options;
+        if (modelInfo.nameFromUrl) {
+            return;
+        }
+
+        let next = null;
+
+        if (propData && propData.treeView) {
+            next = this._extractNameFromTreeViewData(propData.treeView);
+            if (next) {
+                next = this._stripDisplayExtension(next);
+            }
+        }
+
+        if (!next && modelNameForApi) {
+            next = this._stripDisplayExtension(modelNameForApi);
+        }
+
+        if (!next && modelInfo.url) {
+            next = parseXktDisplayNameFromUrl(modelInfo.url);
+        }
+
+        if (!next) {
+            const n = modelInfo.name;
+            if (n && typeof n === "string" && !/^model_\d+$/.test(n)) {
+                next = n;
+            }
+        }
+
+        if (!next) {
+            next = modelId;
+        }
+
+        const prev = modelInfo.name;
+        modelInfo.name = next;
+        if (prev !== next && window.treeView) {
+            window.treeView.buildTree();
+        }
     }
 
     _initEventHandlers() {
@@ -568,11 +661,19 @@ export class ModelsManager {
                         window.modelPropertiesByModel[modelId] = propData.Properties || propData.properties || null;
                         window.modelLegendByModel[modelId] = propData.Legend || propData.legend || null;
                         this.loadedModelsTreeData[modelId] = propData.TreeView || propData.treeView || null;
-                        // Extract model name from metadata (e.g. for Google Drive URLs where URL has no .xkt filename)
-                        const metadataName = propData?.ProjectInfo?.Main?.ProjectInfor?.ModelName;
-                        if (metadataName && typeof metadataName === 'string' && metadataName.trim()) {
-                            modelInfo.name = metadataName.trim();
-                            console.log('Updated model name from metadata:', modelInfo.name);
+                        // Display name: URL first (nameFromUrl); else JSON ProjectInfo
+                        if (!modelInfo.nameFromUrl) {
+                            const metadataName = propData?.ProjectInfo?.Main?.ProjectInfor?.ModelName;
+                            if (metadataName && typeof metadataName === "string" && metadataName.trim()) {
+                                modelInfo.name = this._stripDisplayExtension(metadataName.trim());
+                                console.log("Updated model name from metadata JSON:", modelInfo.name);
+                            } else {
+                                this._applyUrlModelDisplayNameFallbacks(modelInfo, modelId, {
+                                    propData: {
+                                        treeView: this.loadedModelsTreeData[modelId]
+                                    }
+                                });
+                            }
                         }
                         if (window.treeView) {
                             window.treeView.buildTree();
@@ -583,17 +684,23 @@ export class ModelsManager {
                         if (window.modelLegendByModel) window.modelLegendByModel[modelId] = null;
                         this.loadedModelsTreeData[modelId] = null;
                         console.warn('Failed to fetch metadata from metadataUrl:', modelInfo.metadataUrl);
+                        this._applyUrlModelDisplayNameFallbacks(modelInfo, modelId, {});
                     }
                 } else {
-                    // Try to reconstruct the model name as expected by the backend
+                    // Try to reconstruct the model name as expected by the backend (S3 / MongoDB properties)
                     let modelName;
                     if (modelInfo.key) {
                         const fileName = decodeURIComponent(modelInfo.key.split('/').pop());
                         modelName = fileName.replace('.xkt', '.rvt');
                     } else if (modelInfo.url) {
-                        const pathPart = modelInfo.url.split('?')[0].split('#')[0];
-                        const fileName = decodeURIComponent(pathPart.split('/').pop());
-                        modelName = fileName.replace(/\.xkt$/i, '.rvt');
+                        const base = parseXktDisplayNameFromUrl(modelInfo.url);
+                        if (base) {
+                            modelName = `${base}.rvt`;
+                        } else {
+                            const pathPart = modelInfo.url.split('?')[0].split('#')[0];
+                            const fileName = decodeURIComponent(pathPart.split('/').pop());
+                            modelName = fileName.replace(/\.xkt$/i, '.rvt');
+                        }
                     } else {
                         modelName = modelInfo.name;
                     }
@@ -620,11 +727,22 @@ export class ModelsManager {
                             if (dataSource === 'S3' && propData.s3Key) {
                                 console.log(`S3 file: ${propData.s3Key}, Size: ${propData.fileSize} bytes`);
                             }
+                            this._applyUrlModelDisplayNameFallbacks(modelInfo, modelId, {
+                                propData,
+                                modelNameForApi: modelName
+                            });
                         } else {
                             console.warn(`Failed to load properties for model from both S3 and MongoDB:`, modelName);
                             if (window.modelPropertiesByModel) window.modelPropertiesByModel[modelId] = null;
                             if (window.modelLegendByModel) window.modelLegendByModel[modelId] = null;
+                            this._applyUrlModelDisplayNameFallbacks(modelInfo, modelId, {
+                                modelNameForApi: modelName || null
+                            });
                         }
+                    } else {
+                        this._applyUrlModelDisplayNameFallbacks(modelInfo, modelId, {
+                            modelNameForApi: modelName || null
+                        });
                     }
                 }
             } catch (error) {

@@ -2,7 +2,7 @@
 import { Viewer, XKTLoaderPlugin, NavCubePlugin } from "https://unpkg.com/@xeokit/xeokit-sdk@2.6.75/dist/xeokit-sdk.es.js";
 import { Toolbar } from "./toolbar/Toolbar.js";
 import { TreeView } from "./treeview/TreeView.js";
-import { ModelsManager } from "./models/ModelsManager.js";
+import { ModelsManager, parseXktDisplayNameFromUrl } from "./models/ModelsManager.js";
 import { ObjectContextMenu, CanvasContextMenu, ModelNodeContextMenu } from "./contextmenu/ContextMenu.js";
 import { UploadTool } from "./upload/UploadTool.js";
 
@@ -336,12 +336,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (!url || seen.has(url)) return;
                 seen.add(url);
                 const metadataUrl = (modelDataParamValues[index]) ? decodeURIComponent(modelDataParamValues[index]).trim() : null;
-                const parsed = url.split('/').pop().split('?')[0] || '';
-                const name = parsed.toLowerCase().includes('.xkt') ? parsed : `model_${index}`;
-                const id = `url_${index}_${name}`;
+                const urlDisplayName = parseXktDisplayNameFromUrl(url);
+                const nameFromUrl = !!urlDisplayName;
+                const name = urlDisplayName || `model_${index}`;
+                const id = `url_${index}_model_${index}`;
                 modelsManager.modelsData.push({
                     id,
                     name,
+                    nameFromUrl,
                     url,
                     key: null,
                     metadataUrl: metadataUrl || undefined
