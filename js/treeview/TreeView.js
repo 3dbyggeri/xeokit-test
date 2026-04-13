@@ -13,9 +13,144 @@ export class TreeView {
         this.expandedNodes = new Set();
         this.selectedNode = null;
         this.currentTab = 'storeys';
+        /** @type {Map<string, object>} node id -> hierarchy node (for incremental expand/collapse) */
+        this._nodeIndex = new Map();
 
         this._initTabs();
         this._initEventHandlers();
+    }
+
+    _escapeNodeIdForSelector(id) {
+        if (id == null) {
+            return "";
+        }
+        const s = String(id);
+        if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+            return CSS.escape(s);
+        }
+        return s.replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    }
+
+    _indexNodesRecursive(nodes) {
+        if (!nodes || !Array.isArray(nodes)) {
+            return;
+        }
+        for (const node of nodes) {
+            if (node && node.id != null) {
+                this._nodeIndex.set(String(node.id), node);
+            }
+            if (node.children && node.children.length) {
+                this._indexNodesRecursive(node.children);
+            }
+        }
+    }
+
+    _findTreeLiByNodeId(nodeId) {
+        const panel = document.querySelector(`.xeokit-${this.currentTab}Tab .xeokit-tree-panel`);
+        if (!panel) {
+            return null;
+        }
+        const esc = this._escapeNodeIdForSelector(String(nodeId));
+        return panel.querySelector(`li[data-node-id="${esc}"]`);
+    }
+
+    _sceneIdForTreeObjectId(objectId) {
+        return window.idUtils?.numericToSceneId(objectId) ?? null;
+    }
+
+    /**
+     * Storeys tab: tri-state from scene — checked / unchecked / indeterminate, or disabled when not in scene.
+     * @returns {{ checked: boolean, indeterminate: boolean, disabled: boolean }}
+     */
+    _getStoreyCheckboxState(node) {
+        if (!node) {
+            return { checked: true, indeterminate: false, disabled: false };
+        }
+        if (node.objectId != null && node.objectId !== "") {
+            const sceneId = this._sceneIdForTreeObjectId(node.objectId);
+            const entity = sceneId ? this.viewer.scene.objects[sceneId] : null;
+            if (!sceneId || !entity) {
+                return { checked: false, indeterminate: false, disabled: true };
+            }
+            const vis = entity.visible !== false;
+            return { checked: vis, indeterminate: false, disabled: false };
+        }
+        if (node.children && node.children.length) {
+            const leaves = [];
+            this._collectLeafObjectNodes(node, leaves);
+            if (leaves.length === 0) {
+                return { checked: true, indeterminate: false, disabled: false };
+            }
+            const states = leaves.map((n) => this._getStoreyCheckboxState(n));
+            const controllable = states.filter((s) => !s.disabled);
+            if (controllable.length === 0) {
+                return { checked: false, indeterminate: false, disabled: true };
+            }
+            const checkedCount = controllable.filter((s) => s.checked).length;
+            if (checkedCount === controllable.length) {
+                return { checked: true, indeterminate: false, disabled: false };
+            }
+            if (checkedCount === 0) {
+                return { checked: false, indeterminate: false, disabled: false };
+            }
+            return { checked: false, indeterminate: true, disabled: false };
+        }
+        return { checked: true, indeterminate: false, disabled: false };
+    }
+
+    _applyStoreyCheckboxVisuals(checkbox, node) {
+        const s = this._getStoreyCheckboxState(node);
+        checkbox.disabled = s.disabled;
+        checkbox.checked = s.checked;
+        checkbox.indeterminate = s.indeterminate;
+        checkbox.title = s.disabled
+            ? "Not in loaded scene — ID does not match any xeokit object (tree/export mismatch)."
+            : "";
+    }
+
+    _collectLeafObjectNodes(node, out) {
+        if (node.objectId != null && node.objectId !== "") {
+            out.push(node);
+            return;
+        }
+        if (node.children) {
+            node.children.forEach((c) => this._collectLeafObjectNodes(c, out));
+        }
+    }
+
+    _expandNodeInDom(nodeId, node) {
+        if (!node.children || node.children.length === 0) {
+            return;
+        }
+        const li = this._findTreeLiByNodeId(nodeId);
+        if (!li) {
+            return;
+        }
+        let childUl = li.querySelector(":scope > ul");
+        if (!childUl) {
+            childUl = this._createTreeElement(node.children);
+            li.appendChild(childUl);
+        }
+        const expandIcon = li.querySelector(":scope > .tree-node > .tree-expand-icon");
+        if (expandIcon) {
+            expandIcon.classList.add("expanded");
+            expandIcon.classList.remove("leaf");
+        }
+    }
+
+    _collapseNodeInDom(nodeId) {
+        const li = this._findTreeLiByNodeId(nodeId);
+        if (!li) {
+            return;
+        }
+        const childUl = li.querySelector(":scope > ul");
+        if (childUl) {
+            childUl.remove();
+        }
+        const expandIcon = li.querySelector(":scope > .tree-node > .tree-expand-icon");
+        if (expandIcon) {
+            expandIcon.classList.remove("expanded");
+        }
     }
 
     _initTabs() {
@@ -159,6 +294,7 @@ export class TreeView {
         // Clear any loading states
         treePanel.classList.remove('loading');
         treePanel.innerHTML = '';
+        this._nodeIndex = new Map();
 
         try {
             let hierarchyData;
@@ -186,6 +322,7 @@ export class TreeView {
             }
 
             if (hierarchyData && hierarchyData.length > 0) {
+                this._indexNodesRecursive(hierarchyData);
                 const ul = this._createTreeElement(hierarchyData);
                 treePanel.appendChild(ul);
             }
@@ -221,7 +358,7 @@ export class TreeView {
             
             expandIcon.addEventListener('click', (e) => {
                 e.stopPropagation();
-                this.toggleNode(node.id);
+                this.toggleNode(node.id, node);
             });
             
             // Visibility checkbox (or model load/unload checkbox for models tab)
@@ -236,13 +373,21 @@ export class TreeView {
                     e.stopPropagation();
                     this.toggleModelLoad(node, checkbox.checked);
                 });
+            } else if (this.currentTab === 'storeys') {
+                this._applyStoreyCheckboxVisuals(checkbox, node);
+                checkbox.addEventListener('change', (e) => {
+                    e.stopPropagation();
+                    if (checkbox.disabled) {
+                        return;
+                    }
+                    this.toggleVisibility(node, checkbox.checked);
+                    this._refreshStoreyCheckboxesFromScene();
+                });
             } else {
-                // For other tabs, checkbox controls visibility
                 checkbox.checked = true;
                 checkbox.addEventListener('change', (e) => {
                     e.stopPropagation();
                     this.toggleVisibility(node, checkbox.checked);
-                    // Sync children checkboxes when parent is toggled
                     this._syncChildrenCheckboxes(node, checkbox.checked);
                 });
             }
@@ -290,13 +435,37 @@ export class TreeView {
         return ul;
     }
 
-    toggleNode(nodeId) {
+    toggleNode(nodeId, nodeFromClick) {
+        const node = nodeFromClick || this._nodeIndex.get(String(nodeId));
+        if (!node || !node.children || node.children.length === 0) {
+            return;
+        }
+
         if (this.expandedNodes.has(nodeId)) {
             this.expandedNodes.delete(nodeId);
+            this._collapseNodeInDom(nodeId);
         } else {
             this.expandedNodes.add(nodeId);
+            this._expandNodeInDom(nodeId, node);
         }
-        this.buildTree();
+    }
+
+    _refreshStoreyCheckboxesFromScene() {
+        if (this.currentTab !== "storeys") {
+            return;
+        }
+        const panel = document.querySelector(".xeokit-storeysTab .xeokit-tree-panel");
+        if (!panel) {
+            return;
+        }
+        panel.querySelectorAll("li[data-node-id]").forEach((li) => {
+            const id = li.dataset.nodeId;
+            const node = this._nodeIndex.get(String(id));
+            const cb = li.querySelector(".tree-visibility-checkbox");
+            if (node && cb) {
+                this._applyStoreyCheckboxVisuals(cb, node);
+            }
+        });
     }
 
     selectNode(nodeId) {
@@ -306,7 +475,10 @@ export class TreeView {
         });
 
         // Add selection to current node
-        const nodeElement = document.querySelector(`[data-node-id="${nodeId}"] .tree-node`);
+        const esc = this._escapeNodeIdForSelector(String(nodeId));
+        const nodeElement = document.querySelector(
+            `.xeokit-${this.currentTab}Tab [data-node-id="${esc}"] .tree-node`
+        );
         if (nodeElement) {
             nodeElement.classList.add('selected');
             this.selectedNode = nodeId;
@@ -316,29 +488,17 @@ export class TreeView {
 
 
     toggleVisibility(node, visible) {
-        console.log('TreeView: toggleVisibility called', node, visible);
-
         if (node.objectId) {
-            // Single object - convert numeric ID to scene ID format
             const numericId = node.objectId;
             const sceneId = window.idUtils.numericToSceneId(numericId);
-            console.log('TreeView: Converting ID:', numericId, '->', sceneId);
 
             if (sceneId) {
                 const entity = this.viewer.scene.objects[sceneId];
                 if (entity) {
                     entity.visible = visible;
-                    console.log('TreeView: Set visibility for', sceneId, 'to', visible);
-                } else {
-                    console.warn('TreeView: Object not found:', sceneId);
                 }
-            } else {
-                console.warn('TreeView: Could not convert numeric ID to scene ID:', numericId);
-                console.log('TreeView: Available objects:', Object.keys(this.viewer.scene.objects).slice(0, 5));
             }
         } else if (node.children) {
-            // Multiple objects
-            console.log('TreeView: Setting visibility for children');
             this._setChildrenVisibility(node.children, visible);
         }
     }
@@ -382,10 +542,15 @@ export class TreeView {
             return;
         }
 
-        // Update all child checkboxes in the DOM
+        const panel = document.querySelector(`.xeokit-${this.currentTab}Tab .xeokit-tree-panel`);
+        if (!panel) {
+            return;
+        }
+
         const updateCheckboxes = (children) => {
             children.forEach(child => {
-                const checkbox = document.querySelector(`[data-node-id="${child.id}"] .tree-visibility-checkbox`);
+                const esc = this._escapeNodeIdForSelector(String(child.id));
+                const checkbox = panel.querySelector(`li[data-node-id="${esc}"] .tree-visibility-checkbox`);
                 if (checkbox) {
                     checkbox.checked = checked;
                 }
@@ -403,19 +568,12 @@ export class TreeView {
         console.log('TreeView: Show all storeys');
         this.viewer.scene.setObjectsVisible(this.viewer.scene.objectIds, true);
         this.viewer.scene.setObjectsXRayed(this.viewer.scene.xrayedObjectIds, false);
-        this._updateAllCheckboxes(true);
+        this._refreshStoreyCheckboxesFromScene();
     }
 
     hideAllStoreys() {
         console.log('TreeView: Hide all storeys');
         this.viewer.scene.setObjectsVisible(this.viewer.scene.visibleObjectIds, false);
-        this._updateAllCheckboxes(false);
-    }
-
-    _updateAllCheckboxes(checked) {
-        console.log('TreeView: Updating all checkboxes to', checked);
-        document.querySelectorAll('.tree-visibility-checkbox').forEach(checkbox => {
-            checkbox.checked = checked;
-        });
+        this._refreshStoreyCheckboxesFromScene();
     }
 }

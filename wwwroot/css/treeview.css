@@ -188,6 +188,12 @@
     accent-color: #4a7bc8;
 }
 
+.tree-visibility-checkbox:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    filter: grayscale(0.6);
+}
+
 /* Node Label */
 .tree-node-label {
     flex: 1;

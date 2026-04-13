@@ -800,11 +800,27 @@ window.testTreeView = function() {
 
 // Global ID conversion utilities
 window.idUtils = {
-    // Convert from numeric ID to scene object ID format (e.g., "319024" -> "Wall-Ext_102-wk-/Sims-100LBlk-12P[319024]")
+    /**
+     * Map tree metadata id (Revit element id / db id) to xeokit scene object key.
+     * Tries: exact key, "[id]" suffix, then parsed trailing [digits] on each object id.
+     */
     numericToSceneId: function(numericId) {
         const sceneObjects = viewer.scene.objects;
+        if (!sceneObjects || numericId == null || numericId === "") {
+            return null;
+        }
+        const idStr = String(numericId).trim();
+        if (sceneObjects[idStr]) {
+            return idStr;
+        }
         for (const sceneId in sceneObjects) {
-            if (sceneId.includes(`[${numericId}]`)) {
+            if (sceneId.includes(`[${idStr}]`)) {
+                return sceneId;
+            }
+        }
+        for (const sceneId in sceneObjects) {
+            const n = this.sceneToNumericId(sceneId);
+            if (n === idStr) {
                 return sceneId;
             }
         }
