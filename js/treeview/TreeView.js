@@ -15,6 +15,8 @@ export class TreeView {
         this.currentTab = 'storeys';
         /** @type {Map<string, object>} node id -> hierarchy node (for incremental expand/collapse) */
         this._nodeIndex = new Map();
+        /** @type {Map<string, boolean>} storeys tab: scoped leaf node id -> visibility intent (UI only, no scene scan) */
+        this._storeyVisibilityIntent = new Map();
 
         this._initTabs();
         this._initEventHandlers();
@@ -54,58 +56,106 @@ export class TreeView {
         return panel.querySelector(`li[data-node-id="${esc}"]`);
     }
 
-    _sceneIdForTreeObjectId(objectId) {
-        return window.idUtils?.numericToSceneId(objectId) ?? null;
+    /**
+     * Merge visibility intent for storeys leaves: keep prior toggles for same scoped id, default new rows to checked.
+     */
+    _mergeStoreyVisibilityIntent(nodes) {
+        const prev = this._storeyVisibilityIntent;
+        this._storeyVisibilityIntent = new Map();
+        const walk = (list) => {
+            if (!list || !Array.isArray(list)) {
+                return;
+            }
+            for (const node of list) {
+                if (node.objectId != null && node.objectId !== "") {
+                    const id = String(node.id);
+                    this._storeyVisibilityIntent.set(
+                        id,
+                        prev.has(id) ? prev.get(id) : true
+                    );
+                }
+                if (node.children && node.children.length) {
+                    walk(node.children);
+                }
+            }
+        };
+        walk(nodes);
     }
 
     /**
-     * Storeys tab: tri-state from scene — checked / unchecked / indeterminate, or disabled when not in scene.
-     * @returns {{ checked: boolean, indeterminate: boolean, disabled: boolean }}
+     * Storeys tab: checkbox state from _storeyVisibilityIntent only (no scene.objects scan).
      */
-    _getStoreyCheckboxState(node) {
+    _getStoreyCheckboxStateFromIntent(node) {
         if (!node) {
-            return { checked: true, indeterminate: false, disabled: false };
+            return { checked: true, indeterminate: false };
         }
         if (node.objectId != null && node.objectId !== "") {
-            const sceneId = this._sceneIdForTreeObjectId(node.objectId);
-            const entity = sceneId ? this.viewer.scene.objects[sceneId] : null;
-            if (!sceneId || !entity) {
-                return { checked: false, indeterminate: false, disabled: true };
-            }
-            const vis = entity.visible !== false;
-            return { checked: vis, indeterminate: false, disabled: false };
+            const id = String(node.id);
+            const checked = this._storeyVisibilityIntent.has(id)
+                ? this._storeyVisibilityIntent.get(id)
+                : true;
+            return { checked: !!checked, indeterminate: false };
         }
         if (node.children && node.children.length) {
             const leaves = [];
             this._collectLeafObjectNodes(node, leaves);
             if (leaves.length === 0) {
-                return { checked: true, indeterminate: false, disabled: false };
+                return { checked: true, indeterminate: false };
             }
-            const states = leaves.map((n) => this._getStoreyCheckboxState(n));
-            const controllable = states.filter((s) => !s.disabled);
-            if (controllable.length === 0) {
-                return { checked: false, indeterminate: false, disabled: true };
-            }
-            const checkedCount = controllable.filter((s) => s.checked).length;
-            if (checkedCount === controllable.length) {
-                return { checked: true, indeterminate: false, disabled: false };
+            const states = leaves.map((n) => this._getStoreyCheckboxStateFromIntent(n));
+            const checkedCount = states.filter((s) => s.checked).length;
+            if (checkedCount === states.length) {
+                return { checked: true, indeterminate: false };
             }
             if (checkedCount === 0) {
-                return { checked: false, indeterminate: false, disabled: false };
+                return { checked: false, indeterminate: false };
             }
-            return { checked: false, indeterminate: true, disabled: false };
+            return { checked: false, indeterminate: true };
         }
-        return { checked: true, indeterminate: false, disabled: false };
+        return { checked: true, indeterminate: false };
     }
 
     _applyStoreyCheckboxVisuals(checkbox, node) {
-        const s = this._getStoreyCheckboxState(node);
-        checkbox.disabled = s.disabled;
+        const s = this._getStoreyCheckboxStateFromIntent(node);
+        checkbox.disabled = false;
         checkbox.checked = s.checked;
         checkbox.indeterminate = s.indeterminate;
-        checkbox.title = s.disabled
-            ? "Not in loaded scene — ID does not match any xeokit object (tree/export mismatch)."
-            : "";
+        checkbox.title = "";
+    }
+
+    _setStoreyIntentForSubtree(node, checked) {
+        if (node.objectId != null && node.objectId !== "") {
+            this._storeyVisibilityIntent.set(String(node.id), checked);
+            return;
+        }
+        if (node.children) {
+            node.children.forEach((c) => this._setStoreyIntentForSubtree(c, checked));
+        }
+    }
+
+    _onStoreyCheckboxUserChange(node, checked) {
+        this._setStoreyIntentForSubtree(node, checked);
+        this.toggleVisibility(node, checked);
+        this._repaintStoreyCheckboxesFromIntent();
+    }
+
+    /** Update every storeys checkbox from intent map (visible rows only; cheap, no scene scan). */
+    _repaintStoreyCheckboxesFromIntent() {
+        if (this.currentTab !== "storeys") {
+            return;
+        }
+        const panel = document.querySelector(".xeokit-storeysTab .xeokit-tree-panel");
+        if (!panel) {
+            return;
+        }
+        panel.querySelectorAll("li[data-node-id]").forEach((li) => {
+            const id = li.dataset.nodeId;
+            const treeNode = this._nodeIndex.get(String(id));
+            const cb = li.querySelector(".tree-visibility-checkbox");
+            if (treeNode && cb) {
+                this._applyStoreyCheckboxVisuals(cb, treeNode);
+            }
+        });
     }
 
     _collectLeafObjectNodes(node, out) {
@@ -323,6 +373,9 @@ export class TreeView {
 
             if (hierarchyData && hierarchyData.length > 0) {
                 this._indexNodesRecursive(hierarchyData);
+                if (this.currentTab === "storeys") {
+                    this._mergeStoreyVisibilityIntent(hierarchyData);
+                }
                 const ul = this._createTreeElement(hierarchyData);
                 treePanel.appendChild(ul);
             }
@@ -377,11 +430,7 @@ export class TreeView {
                 this._applyStoreyCheckboxVisuals(checkbox, node);
                 checkbox.addEventListener('change', (e) => {
                     e.stopPropagation();
-                    if (checkbox.disabled) {
-                        return;
-                    }
-                    this.toggleVisibility(node, checkbox.checked);
-                    this._refreshStoreyCheckboxesFromScene();
+                    this._onStoreyCheckboxUserChange(node, checkbox.checked);
                 });
             } else {
                 checkbox.checked = true;
@@ -450,24 +499,6 @@ export class TreeView {
         }
     }
 
-    _refreshStoreyCheckboxesFromScene() {
-        if (this.currentTab !== "storeys") {
-            return;
-        }
-        const panel = document.querySelector(".xeokit-storeysTab .xeokit-tree-panel");
-        if (!panel) {
-            return;
-        }
-        panel.querySelectorAll("li[data-node-id]").forEach((li) => {
-            const id = li.dataset.nodeId;
-            const node = this._nodeIndex.get(String(id));
-            const cb = li.querySelector(".tree-visibility-checkbox");
-            if (node && cb) {
-                this._applyStoreyCheckboxVisuals(cb, node);
-            }
-        });
-    }
-
     selectNode(nodeId) {
         // Remove previous selection
         document.querySelectorAll('.tree-node.selected').forEach(node => {
@@ -488,16 +519,25 @@ export class TreeView {
 
 
     toggleVisibility(node, visible) {
+        const idUtils = window.idUtils;
         if (node.objectId) {
             const numericId = node.objectId;
-            const sceneId = window.idUtils.numericToSceneId(numericId);
-
-            if (sceneId) {
-                const entity = this.viewer.scene.objects[sceneId];
-                if (entity) {
-                    entity.visible = visible;
-                }
+            if (!idUtils || typeof idUtils.numericToSceneId !== "function") {
+                console.warn("TreeView: idUtils.numericToSceneId not available");
+                return;
             }
+            const sceneId = idUtils.numericToSceneId(numericId);
+
+            if (!sceneId) {
+                console.warn("TreeView: Could not convert numeric ID to scene ID:", numericId);
+                return;
+            }
+            const entity = this.viewer.scene.objects[sceneId];
+            if (!entity) {
+                console.warn("TreeView: Object not in scene:", sceneId);
+                return;
+            }
+            entity.visible = visible;
         } else if (node.children) {
             this._setChildrenVisibility(node.children, visible);
         }
@@ -521,16 +561,25 @@ export class TreeView {
     }
 
     _setChildrenVisibility(children, visible) {
-        children.forEach(child => {
+        const idUtils = window.idUtils;
+        if (!idUtils || typeof idUtils.numericToSceneId !== "function") {
+            console.warn("TreeView: idUtils.numericToSceneId not available");
+            return;
+        }
+        children.forEach((child) => {
             if (child.objectId) {
                 const numericId = child.objectId;
-                const sceneId = window.idUtils.numericToSceneId(numericId);
-                if (sceneId) {
-                    const entity = this.viewer.scene.objects[sceneId];
-                    if (entity) {
-                        entity.visible = visible;
-                    }
+                const sceneId = idUtils.numericToSceneId(numericId);
+                if (!sceneId) {
+                    console.warn("TreeView: Could not convert numeric ID to scene ID:", numericId);
+                    return;
                 }
+                const entity = this.viewer.scene.objects[sceneId];
+                if (!entity) {
+                    console.warn("TreeView: Object not in scene:", sceneId);
+                    return;
+                }
+                entity.visible = visible;
             } else if (child.children) {
                 this._setChildrenVisibility(child.children, visible);
             }
@@ -566,14 +615,20 @@ export class TreeView {
     // Button action handlers
     showAllStoreys() {
         console.log('TreeView: Show all storeys');
+        for (const k of this._storeyVisibilityIntent.keys()) {
+            this._storeyVisibilityIntent.set(k, true);
+        }
         this.viewer.scene.setObjectsVisible(this.viewer.scene.objectIds, true);
         this.viewer.scene.setObjectsXRayed(this.viewer.scene.xrayedObjectIds, false);
-        this._refreshStoreyCheckboxesFromScene();
+        this._repaintStoreyCheckboxesFromIntent();
     }
 
     hideAllStoreys() {
         console.log('TreeView: Hide all storeys');
+        for (const k of this._storeyVisibilityIntent.keys()) {
+            this._storeyVisibilityIntent.set(k, false);
+        }
         this.viewer.scene.setObjectsVisible(this.viewer.scene.visibleObjectIds, false);
-        this._refreshStoreyCheckboxesFromScene();
+        this._repaintStoreyCheckboxesFromIntent();
     }
 }

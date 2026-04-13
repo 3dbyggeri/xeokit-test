@@ -409,7 +409,7 @@ export class ModelsManager {
 
                 if (hierarchyData) {
                     // Flatten the structure by removing [Main] and Levels layers
-                    const flattenedChildren = this._flattenModelHierarchy(hierarchyData);
+                    const flattenedChildren = this._flattenModelHierarchy(hierarchyData, modelId);
                     
                     const modelNode = {
                         id: `model_${modelId}`,
@@ -503,22 +503,36 @@ export class ModelsManager {
         return nodes;
     }
 
-    _flattenModelHierarchy(hierarchyData) {
+    /**
+     * Tree row id scoped to a loaded model so duplicate labels/ids from another file never
+     * collide in the DOM or TreeView index. objectId stays the raw element id for scene lookup.
+     * @param {string} modelId
+     * @param {string} localId — id from metadata path or item.id within that model
+     */
+    _scopeTreeNodeId(modelId, localId) {
+        const lid =
+            localId != null && String(localId).length > 0
+                ? String(localId)
+                : `n_${Math.random().toString(36).substring(2, 11)}`;
+        return `model_${modelId}__${lid}`;
+    }
+
+    _flattenModelHierarchy(hierarchyData, modelId) {
         if (!hierarchyData) {
             return [];
         }
 
         // Handle different data structures
         if (Array.isArray(hierarchyData)) {
-            return this._flattenArrayHierarchy(hierarchyData);
+            return this._flattenArrayHierarchy(hierarchyData, modelId);
         } else if (typeof hierarchyData === 'object') {
-            return this._flattenObjectHierarchy(hierarchyData);
+            return this._flattenObjectHierarchy(hierarchyData, '', modelId);
         }
 
         return [];
     }
 
-    _flattenArrayHierarchy(data) {
+    _flattenArrayHierarchy(data, modelId) {
         const result = [];
         
         for (const item of data) {
@@ -526,25 +540,33 @@ export class ModelsManager {
                 // Check if this is a [Main] node (contains .rvt in the name)
                 if (item.label && item.label.includes('.rvt')) {
                     // Skip the [Main] layer and go directly to its children
-                    result.push(...this._flattenArrayHierarchy(item.children));
+                    result.push(...this._flattenArrayHierarchy(item.children, modelId));
                 } else if (item.label && item.label.toLowerCase().includes('levels')) {
                     // Skip the Levels layer and go directly to its children
-                    result.push(...this._flattenArrayHierarchy(item.children));
+                    result.push(...this._flattenArrayHierarchy(item.children, modelId));
                 } else {
                     // Regular node, process normally
+                    const localId =
+                        item.id != null && item.id !== ''
+                            ? String(item.id)
+                            : `node_${Math.random().toString(36).substring(2, 11)}`;
                     const node = {
-                        id: item.id || `node_${Math.random().toString(36).substring(2, 11)}`,
+                        id: this._scopeTreeNodeId(modelId, localId),
                         label: item.label || item.name || 'Unknown',
                         type: item.type || 'storey',
                         objectId: item.objectId || null,
-                        children: this._flattenArrayHierarchy(item.children)
+                        children: this._flattenArrayHierarchy(item.children, modelId)
                     };
                     result.push(node);
                 }
             } else {
                 // Leaf node
+                const localId =
+                    item.id != null && item.id !== ''
+                        ? String(item.id)
+                        : `node_${Math.random().toString(36).substring(2, 11)}`;
                 const node = {
-                    id: item.id || `node_${Math.random().toString(36).substring(2, 11)}`,
+                    id: this._scopeTreeNodeId(modelId, localId),
                     label: item.label || item.name || 'Unknown',
                     type: item.type || 'storey',
                     objectId: item.objectId || null,
@@ -557,7 +579,7 @@ export class ModelsManager {
         return result;
     }
 
-    _flattenObjectHierarchy(obj, parentId = '') {
+    _flattenObjectHierarchy(obj, parentId, modelId) {
         const nodes = [];
         
         for (const [key, value] of Object.entries(obj)) {
@@ -565,12 +587,12 @@ export class ModelsManager {
             if (key.includes('.rvt') || key.toLowerCase().includes('levels')) {
                 if (typeof value === 'object' && value !== null) {
                     // Recursively process the children, skipping this layer
-                    nodes.push(...this._flattenObjectHierarchy(value, parentId));
+                    nodes.push(...this._flattenObjectHierarchy(value, parentId, modelId));
                 }
                 continue;
             }
             
-            const nodeId = parentId ? `${parentId}_${key}` : key;
+            const pathKey = parentId ? `${parentId}_${key}` : key;
             
             if (typeof value === 'object' && value !== null) {
                 // Check if this is a leaf node (has properties like "Family and Type")
@@ -581,7 +603,7 @@ export class ModelsManager {
                 if (hasProperties) {
                     // This is a leaf node with properties
                     const node = {
-                        id: nodeId,
+                        id: this._scopeTreeNodeId(modelId, pathKey),
                         label: key,
                         type: 'object',
                         objectId: key,
@@ -591,17 +613,17 @@ export class ModelsManager {
                 } else {
                     // This is a container node
                     const node = {
-                        id: nodeId,
+                        id: this._scopeTreeNodeId(modelId, pathKey),
                         label: key,
                         type: 'category',
-                        children: this._flattenObjectHierarchy(value, nodeId)
+                        children: this._flattenObjectHierarchy(value, pathKey, modelId)
                     };
                     nodes.push(node);
                 }
             } else {
                 // Simple value
                 const node = {
-                    id: nodeId,
+                    id: this._scopeTreeNodeId(modelId, pathKey),
                     label: key,
                     type: 'property',
                     objectId: key,
