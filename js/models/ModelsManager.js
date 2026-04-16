@@ -318,8 +318,9 @@ export class ModelsManager {
                     const fileName = decodeURIComponent(obj.Key.split('/').pop()); // Get the last part of URL and decode it
                     const modelName = fileName.split('/').pop().replace('.xkt', '.rvt'); // Get last part after any remaining / and replace extension
 
+                    const cleanETag = obj.ETag ? obj.ETag.replace(/"/g, '') : `noetag_${Date.now()}`;
                     return {
-                        id: obj.ETag ? obj.ETag.replace(/"/g, '') : `model_${Date.now()}`,
+                        id: `${obj.Key}::${cleanETag}`,
                         name: obj.name || modelName,
                         url: `/api/modeldata/xkt/${encodeURIComponent(obj.Key)}`,
                         key: obj.Key
