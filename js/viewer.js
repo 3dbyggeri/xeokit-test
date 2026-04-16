@@ -2,7 +2,7 @@
 import { Viewer, XKTLoaderPlugin, NavCubePlugin } from "https://unpkg.com/@xeokit/xeokit-sdk@2.6.75/dist/xeokit-sdk.es.js";
 import { Toolbar } from "./toolbar/Toolbar.js";
 import { TreeView } from "./treeview/TreeView.js";
-import { ModelsManager } from "./models/ModelsManager.js";
+import { ModelsManager, parseXktDisplayNameFromUrl } from "./models/ModelsManager.js";
 import { ObjectContextMenu, CanvasContextMenu, ModelNodeContextMenu } from "./contextmenu/ContextMenu.js";
 import { UploadTool } from "./upload/UploadTool.js";
 
@@ -336,12 +336,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (!url || seen.has(url)) return;
                 seen.add(url);
                 const metadataUrl = (modelDataParamValues[index]) ? decodeURIComponent(modelDataParamValues[index]).trim() : null;
-                const parsed = url.split('/').pop().split('?')[0] || '';
-                const name = parsed.toLowerCase().includes('.xkt') ? parsed : `model_${index}`;
-                const id = `url_${index}_${name}`;
+                const urlDisplayName = parseXktDisplayNameFromUrl(url);
+                const nameFromUrl = !!urlDisplayName;
+                const name = urlDisplayName || `model_${index}`;
+                const id = `url_${index}_model_${index}`;
                 modelsManager.modelsData.push({
                     id,
                     name,
+                    nameFromUrl,
                     url,
                     key: null,
                     metadataUrl: metadataUrl || undefined
@@ -798,11 +800,27 @@ window.testTreeView = function() {
 
 // Global ID conversion utilities
 window.idUtils = {
-    // Convert from numeric ID to scene object ID format (e.g., "319024" -> "Wall-Ext_102-wk-/Sims-100LBlk-12P[319024]")
+    /**
+     * Map tree metadata id (Revit element id / db id) to xeokit scene object key.
+     * Tries: exact key, "[id]" suffix, then parsed trailing [digits] on each object id.
+     */
     numericToSceneId: function(numericId) {
         const sceneObjects = viewer.scene.objects;
+        if (!sceneObjects || numericId == null || numericId === "") {
+            return null;
+        }
+        const idStr = String(numericId).trim();
+        if (sceneObjects[idStr]) {
+            return idStr;
+        }
         for (const sceneId in sceneObjects) {
-            if (sceneId.includes(`[${numericId}]`)) {
+            if (sceneId.includes(`[${idStr}]`)) {
+                return sceneId;
+            }
+        }
+        for (const sceneId in sceneObjects) {
+            const n = this.sceneToNumericId(sceneId);
+            if (n === idStr) {
                 return sceneId;
             }
         }
