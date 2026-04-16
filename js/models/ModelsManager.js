@@ -463,12 +463,7 @@ export class ModelsManager {
             const nodeId = parentId ? `${parentId}_${key}` : key;
             
             if (typeof value === 'object' && value !== null) {
-                // Check if this is a leaf node (has properties like "Family and Type")
-                const hasProperties = Object.values(value).some(v => 
-                    typeof v === 'string' || typeof v === 'number'
-                );
-                
-                if (hasProperties) {
+                if (this._isMetadataPropertyBagLeaf(value)) {
                     // This is a leaf node with properties
                     const node = {
                         id: nodeId,
@@ -516,6 +511,28 @@ export class ModelsManager {
                 ? String(localId)
                 : `n_${Math.random().toString(36).substring(2, 11)}`;
         return `model_${modelId}__${lid}`;
+    }
+
+    /**
+     * Revit metadata leaves are objects like { "Family and Type": "..." } or { "Family and Type": null }.
+     * Previously only primitives counted as "properties", so all-null bags were treated as folders and
+     * produced bogus nodes with objectId "Family and Type".
+     */
+    _isMetadataPropertyBagLeaf(value) {
+        if (typeof value !== "object" || value === null || Array.isArray(value)) {
+            return false;
+        }
+        const vals = Object.values(value);
+        if (vals.length === 0) {
+            return false;
+        }
+        const hasPrimitiveProperty = vals.some(
+            (v) => typeof v === "string" || typeof v === "number"
+        );
+        const onlyNullOrUndefinedProps = vals.every(
+            (v) => v === null || v === undefined
+        );
+        return hasPrimitiveProperty || onlyNullOrUndefinedProps;
     }
 
     _flattenModelHierarchy(hierarchyData, modelId) {
@@ -596,12 +613,7 @@ export class ModelsManager {
             const pathKey = parentId ? `${parentId}_${key}` : key;
             
             if (typeof value === 'object' && value !== null) {
-                // Check if this is a leaf node (has properties like "Family and Type")
-                const hasProperties = Object.values(value).some(v => 
-                    typeof v === 'string' || typeof v === 'number'
-                );
-                
-                if (hasProperties) {
+                if (this._isMetadataPropertyBagLeaf(value)) {
                     // This is a leaf node with properties
                     const node = {
                         id: this._scopeTreeNodeId(modelId, pathKey),

@@ -154,6 +154,14 @@
     background-color: rgba(74, 123, 200, 0.3);
 }
 
+/* User clicked a storeys row whose metadata id does not match any scene object */
+.xeokit-tree-panel li .tree-node.tree-node-unresolved {
+    opacity: 0.65;
+}
+.xeokit-tree-panel li .tree-node.tree-node-unresolved .tree-node-label {
+    color: #777;
+}
+
 /* Expand/Collapse Icons */
 .tree-expand-icon {
     width: 12px;

@@ -17,6 +17,8 @@ export class TreeView {
         this._nodeIndex = new Map();
         /** @type {Map<string, boolean>} storeys tab: scoped leaf node id -> visibility intent (UI only, no scene scan) */
         this._storeyVisibilityIntent = new Map();
+        /** @type {Set<string>} storeys tab: tree node ids user clicked with no matching scene entity; cleared on storeys rebuild */
+        this._unresolvedStoreyNodeIds = new Set();
 
         this._initTabs();
         this._initEventHandlers();
@@ -137,6 +139,10 @@ export class TreeView {
         this._setStoreyIntentForSubtree(node, checked);
         this.toggleVisibility(node, checked);
         this._repaintStoreyCheckboxesFromIntent();
+        // Grey-out only for individual rows with objectId (not category parents).
+        if (node.objectId != null && node.objectId !== '') {
+            this._syncUnresolvedGreyForStoreyLeaf(node);
+        }
     }
 
     /** Update every storeys checkbox from intent map (visible rows only; cheap, no scene scan). */
@@ -345,6 +351,9 @@ export class TreeView {
         treePanel.classList.remove('loading');
         treePanel.innerHTML = '';
         this._nodeIndex = new Map();
+        if (this.currentTab === 'storeys') {
+            this._unresolvedStoreyNodeIds.clear();
+        }
 
         try {
             let hierarchyData;
@@ -399,7 +408,10 @@ export class TreeView {
             
             const nodeDiv = document.createElement('div');
             nodeDiv.className = 'tree-node';
-            
+            if (this.currentTab === 'storeys' && this._unresolvedStoreyNodeIds.has(node.id)) {
+                nodeDiv.classList.add('tree-node-unresolved');
+            }
+
             // Expand/collapse icon
             const expandIcon = document.createElement('span');
             expandIcon.className = 'tree-expand-icon';
@@ -513,6 +525,40 @@ export class TreeView {
         if (nodeElement) {
             nodeElement.classList.add('selected');
             this.selectedNode = nodeId;
+        }
+    }
+
+    /**
+     * Storeys tab: after checkbox toggles a leaf row, dim it if objectId does not resolve to a
+     * scene entity; clear dim when it does. Category rows are skipped (no objectId on parent).
+     * Set persists until storeys tree rebuild.
+     */
+    _syncUnresolvedGreyForStoreyLeaf(node) {
+        if (this.currentTab !== 'storeys') {
+            return;
+        }
+        const panel = document.querySelector('.xeokit-storeysTab .xeokit-tree-panel');
+        if (!panel) {
+            return;
+        }
+        const idUtils = window.idUtils;
+        if (!idUtils || typeof idUtils.numericToSceneId !== 'function') {
+            return;
+        }
+        const sceneId = idUtils.numericToSceneId(node.objectId);
+        const entity = sceneId ? this.viewer.scene.objects[sceneId] : null;
+        const esc = this._escapeNodeIdForSelector(String(node.id));
+        const row = panel.querySelector(`li[data-node-id="${esc}"] .tree-node`);
+        if (entity) {
+            this._unresolvedStoreyNodeIds.delete(node.id);
+            if (row) {
+                row.classList.remove('tree-node-unresolved');
+            }
+        } else {
+            this._unresolvedStoreyNodeIds.add(node.id);
+            if (row) {
+                row.classList.add('tree-node-unresolved');
+            }
         }
     }
 
