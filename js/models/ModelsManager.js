@@ -1,4 +1,32 @@
 /**
+ * Parse *.xkt file basename from a model URL without extension (handles presigned URLs where the last segment may not be *.xkt).
+ */
+export function parseXktDisplayNameFromUrl(urlString) {
+    if (!urlString || typeof urlString !== "string") {
+        return null;
+    }
+    let decoded = urlString;
+    try {
+        decoded = decodeURIComponent(urlString);
+    } catch (e) {
+        decoded = urlString;
+    }
+    const match = decoded.match(/([^/\\?#]+\.xkt)(?:[?#]|$)/i);
+    if (match && match[1]) {
+        return match[1].replace(/\.xkt$/i, "");
+    }
+    const pathOnly = decoded.split(/[?#]/)[0];
+    const segments = pathOnly.split("/").filter(Boolean);
+    for (let i = segments.length - 1; i >= 0; i--) {
+        const seg = segments[i];
+        if (/\.xkt$/i.test(seg)) {
+            return seg.replace(/\.xkt$/i, "");
+        }
+    }
+    return null;
+}
+
+/**
  * ModelsManager - Handles model loading/unloading and display in the Models tab
  */
 export class ModelsManager {
@@ -18,6 +46,71 @@ export class ModelsManager {
         this.onModelUnloaded = null;
 
         this._initEventHandlers();
+    }
+
+    _stripDisplayExtension(str) {
+        if (!str || typeof str !== "string") {
+            return str;
+        }
+        return str.replace(/\.(rvt|xkt|ifc|nwc|dwg|rfa)$/i, "").trim();
+    }
+
+    _extractNameFromTreeViewData(treeData) {
+        if (!treeData || typeof treeData !== "object") {
+            return null;
+        }
+        const keys = Object.keys(treeData);
+        for (const k of keys) {
+            const m = k.match(/\[Main\]\s*(.+?)\.rvt$/i) || k.match(/\[Main\]\s*(.+)$/i);
+            if (m && m[1]) {
+                return m[1].trim();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * When URL did not yield a display name, set name from metadata / tree / API filename / id.
+     */
+    _applyUrlModelDisplayNameFallbacks(modelInfo, modelId, options = {}) {
+        const { propData = null, modelNameForApi = null } = options;
+        if (modelInfo.nameFromUrl) {
+            return;
+        }
+
+        let next = null;
+
+        if (propData && propData.treeView) {
+            next = this._extractNameFromTreeViewData(propData.treeView);
+            if (next) {
+                next = this._stripDisplayExtension(next);
+            }
+        }
+
+        if (!next && modelNameForApi) {
+            next = this._stripDisplayExtension(modelNameForApi);
+        }
+
+        if (!next && modelInfo.url) {
+            next = parseXktDisplayNameFromUrl(modelInfo.url);
+        }
+
+        if (!next) {
+            const n = modelInfo.name;
+            if (n && typeof n === "string" && !/^model_\d+$/.test(n)) {
+                next = n;
+            }
+        }
+
+        if (!next) {
+            next = modelId;
+        }
+
+        const prev = modelInfo.name;
+        modelInfo.name = next;
+        if (prev !== next && window.treeView) {
+            window.treeView.buildTree();
+        }
     }
 
     _initEventHandlers() {
@@ -225,8 +318,9 @@ export class ModelsManager {
                     const fileName = decodeURIComponent(obj.Key.split('/').pop()); // Get the last part of URL and decode it
                     const modelName = fileName.split('/').pop().replace('.xkt', '.rvt'); // Get last part after any remaining / and replace extension
 
+                    const cleanETag = obj.ETag ? obj.ETag.replace(/"/g, '') : `noetag_${Date.now()}`;
                     return {
-                        id: obj.ETag ? obj.ETag.replace(/"/g, '') : `model_${Date.now()}`,
+                        id: `${obj.Key}::${cleanETag}`,
                         name: obj.name || modelName,
                         url: `/api/modeldata/xkt/${encodeURIComponent(obj.Key)}`,
                         key: obj.Key
@@ -316,7 +410,7 @@ export class ModelsManager {
 
                 if (hierarchyData) {
                     // Flatten the structure by removing [Main] and Levels layers
-                    const flattenedChildren = this._flattenModelHierarchy(hierarchyData);
+                    const flattenedChildren = this._flattenModelHierarchy(hierarchyData, modelId);
                     
                     const modelNode = {
                         id: `model_${modelId}`,
@@ -369,12 +463,7 @@ export class ModelsManager {
             const nodeId = parentId ? `${parentId}_${key}` : key;
             
             if (typeof value === 'object' && value !== null) {
-                // Check if this is a leaf node (has properties like "Family and Type")
-                const hasProperties = Object.values(value).some(v => 
-                    typeof v === 'string' || typeof v === 'number'
-                );
-                
-                if (hasProperties) {
+                if (this._isMetadataPropertyBagLeaf(value)) {
                     // This is a leaf node with properties
                     const node = {
                         id: nodeId,
@@ -410,22 +499,58 @@ export class ModelsManager {
         return nodes;
     }
 
-    _flattenModelHierarchy(hierarchyData) {
+    /**
+     * Tree row id scoped to a loaded model so duplicate labels/ids from another file never
+     * collide in the DOM or TreeView index. objectId stays the raw element id for scene lookup.
+     * @param {string} modelId
+     * @param {string} localId — id from metadata path or item.id within that model
+     */
+    _scopeTreeNodeId(modelId, localId) {
+        const lid =
+            localId != null && String(localId).length > 0
+                ? String(localId)
+                : `n_${Math.random().toString(36).substring(2, 11)}`;
+        return `model_${modelId}__${lid}`;
+    }
+
+    /**
+     * Revit metadata leaves are objects like { "Family and Type": "..." } or { "Family and Type": null }.
+     * Previously only primitives counted as "properties", so all-null bags were treated as folders and
+     * produced bogus nodes with objectId "Family and Type".
+     */
+    _isMetadataPropertyBagLeaf(value) {
+        if (typeof value !== "object" || value === null || Array.isArray(value)) {
+            return false;
+        }
+        const vals = Object.values(value);
+        if (vals.length === 0) {
+            return false;
+        }
+        const hasPrimitiveProperty = vals.some(
+            (v) => typeof v === "string" || typeof v === "number"
+        );
+        const onlyNullOrUndefinedProps = vals.every(
+            (v) => v === null || v === undefined
+        );
+        return hasPrimitiveProperty || onlyNullOrUndefinedProps;
+    }
+
+    _flattenModelHierarchy(hierarchyData, modelId) {
         if (!hierarchyData) {
             return [];
         }
 
         // Handle different data structures
         if (Array.isArray(hierarchyData)) {
-            return this._flattenArrayHierarchy(hierarchyData);
+            return this._flattenArrayHierarchy(hierarchyData, modelId);
         } else if (typeof hierarchyData === 'object') {
-            return this._flattenObjectHierarchy(hierarchyData);
+            return this._flattenObjectHierarchy(hierarchyData, '', modelId);
         }
 
         return [];
     }
 
-    _flattenArrayHierarchy(data) {
+    _flattenArrayHierarchy(data, modelId) {
         const result = [];
         
         for (const item of data) {
@@ -433,25 +558,33 @@ export class ModelsManager {
                 // Check if this is a [Main] node (contains .rvt in the name)
                 if (item.label && item.label.includes('.rvt')) {
                     // Skip the [Main] layer and go directly to its children
-                    result.push(...this._flattenArrayHierarchy(item.children));
+                    result.push(...this._flattenArrayHierarchy(item.children, modelId));
                 } else if (item.label && item.label.toLowerCase().includes('levels')) {
                     // Skip the Levels layer and go directly to its children
-                    result.push(...this._flattenArrayHierarchy(item.children));
+                    result.push(...this._flattenArrayHierarchy(item.children, modelId));
                 } else {
                     // Regular node, process normally
+                    const localId =
+                        item.id != null && item.id !== ''
+                            ? String(item.id)
+                            : `node_${Math.random().toString(36).substring(2, 11)}`;
                     const node = {
-                        id: item.id || `node_${Math.random().toString(36).substring(2, 11)}`,
+                        id: this._scopeTreeNodeId(modelId, localId),
                         label: item.label || item.name || 'Unknown',
                         type: item.type || 'storey',
                         objectId: item.objectId || null,
-                        children: this._flattenArrayHierarchy(item.children)
+                        children: this._flattenArrayHierarchy(item.children, modelId)
                     };
                     result.push(node);
                 }
             } else {
                 // Leaf node
+                const localId =
+                    item.id != null && item.id !== ''
+                        ? String(item.id)
+                        : `node_${Math.random().toString(36).substring(2, 11)}`;
                 const node = {
-                    id: item.id || `node_${Math.random().toString(36).substring(2, 11)}`,
+                    id: this._scopeTreeNodeId(modelId, localId),
                     label: item.label || item.name || 'Unknown',
                     type: item.type || 'storey',
                     objectId: item.objectId || null,
@@ -464,7 +597,7 @@ export class ModelsManager {
         return result;
     }
 
-    _flattenObjectHierarchy(obj, parentId = '') {
+    _flattenObjectHierarchy(obj, parentId, modelId) {
         const nodes = [];
         
         for (const [key, value] of Object.entries(obj)) {
@@ -472,23 +605,18 @@ export class ModelsManager {
             if (key.includes('.rvt') || key.toLowerCase().includes('levels')) {
                 if (typeof value === 'object' && value !== null) {
                     // Recursively process the children, skipping this layer
-                    nodes.push(...this._flattenObjectHierarchy(value, parentId));
+                    nodes.push(...this._flattenObjectHierarchy(value, parentId, modelId));
                 }
                 continue;
             }
             
-            const nodeId = parentId ? `${parentId}_${key}` : key;
+            const pathKey = parentId ? `${parentId}_${key}` : key;
             
             if (typeof value === 'object' && value !== null) {
-                // Check if this is a leaf node (has properties like "Family and Type")
-                const hasProperties = Object.values(value).some(v => 
-                    typeof v === 'string' || typeof v === 'number'
-                );
-                
-                if (hasProperties) {
+                if (this._isMetadataPropertyBagLeaf(value)) {
                     // This is a leaf node with properties
                     const node = {
-                        id: nodeId,
+                        id: this._scopeTreeNodeId(modelId, pathKey),
                         label: key,
                         type: 'object',
                         objectId: key,
@@ -498,17 +626,17 @@ export class ModelsManager {
                 } else {
                     // This is a container node
                     const node = {
-                        id: nodeId,
+                        id: this._scopeTreeNodeId(modelId, pathKey),
                         label: key,
                         type: 'category',
-                        children: this._flattenObjectHierarchy(value, nodeId)
+                        children: this._flattenObjectHierarchy(value, pathKey, modelId)
                     };
                     nodes.push(node);
                 }
             } else {
                 // Simple value
                 const node = {
-                    id: nodeId,
+                    id: this._scopeTreeNodeId(modelId, pathKey),
                     label: key,
                     type: 'property',
                     objectId: key,
@@ -568,11 +696,19 @@ export class ModelsManager {
                         window.modelPropertiesByModel[modelId] = propData.Properties || propData.properties || null;
                         window.modelLegendByModel[modelId] = propData.Legend || propData.legend || null;
                         this.loadedModelsTreeData[modelId] = propData.TreeView || propData.treeView || null;
-                        // Extract model name from metadata (e.g. for Google Drive URLs where URL has no .xkt filename)
-                        const metadataName = propData?.ProjectInfo?.Main?.ProjectInfor?.ModelName;
-                        if (metadataName && typeof metadataName === 'string' && metadataName.trim()) {
-                            modelInfo.name = metadataName.trim();
-                            console.log('Updated model name from metadata:', modelInfo.name);
+                        // Display name: URL first (nameFromUrl); else JSON ProjectInfo
+                        if (!modelInfo.nameFromUrl) {
+                            const metadataName = propData?.ProjectInfo?.Main?.ProjectInfor?.ModelName;
+                            if (metadataName && typeof metadataName === "string" && metadataName.trim()) {
+                                modelInfo.name = this._stripDisplayExtension(metadataName.trim());
+                                console.log("Updated model name from metadata JSON:", modelInfo.name);
+                            } else {
+                                this._applyUrlModelDisplayNameFallbacks(modelInfo, modelId, {
+                                    propData: {
+                                        treeView: this.loadedModelsTreeData[modelId]
+                                    }
+                                });
+                            }
                         }
                         if (window.treeView) {
                             window.treeView.buildTree();
@@ -583,17 +719,23 @@ export class ModelsManager {
                         if (window.modelLegendByModel) window.modelLegendByModel[modelId] = null;
                         this.loadedModelsTreeData[modelId] = null;
                         console.warn('Failed to fetch metadata from metadataUrl:', modelInfo.metadataUrl);
+                        this._applyUrlModelDisplayNameFallbacks(modelInfo, modelId, {});
                     }
                 } else {
-                    // Try to reconstruct the model name as expected by the backend
+                    // Try to reconstruct the model name as expected by the backend (S3 / MongoDB properties)
                     let modelName;
                     if (modelInfo.key) {
                         const fileName = decodeURIComponent(modelInfo.key.split('/').pop());
                         modelName = fileName.replace('.xkt', '.rvt');
                     } else if (modelInfo.url) {
-                        const pathPart = modelInfo.url.split('?')[0].split('#')[0];
-                        const fileName = decodeURIComponent(pathPart.split('/').pop());
-                        modelName = fileName.replace(/\.xkt$/i, '.rvt');
+                        const base = parseXktDisplayNameFromUrl(modelInfo.url);
+                        if (base) {
+                            modelName = `${base}.rvt`;
+                        } else {
+                            const pathPart = modelInfo.url.split('?')[0].split('#')[0];
+                            const fileName = decodeURIComponent(pathPart.split('/').pop());
+                            modelName = fileName.replace(/\.xkt$/i, '.rvt');
+                        }
                     } else {
                         modelName = modelInfo.name;
                     }
@@ -620,11 +762,22 @@ export class ModelsManager {
                             if (dataSource === 'S3' && propData.s3Key) {
                                 console.log(`S3 file: ${propData.s3Key}, Size: ${propData.fileSize} bytes`);
                             }
+                            this._applyUrlModelDisplayNameFallbacks(modelInfo, modelId, {
+                                propData,
+                                modelNameForApi: modelName
+                            });
                         } else {
                             console.warn(`Failed to load properties for model from both S3 and MongoDB:`, modelName);
                             if (window.modelPropertiesByModel) window.modelPropertiesByModel[modelId] = null;
                             if (window.modelLegendByModel) window.modelLegendByModel[modelId] = null;
+                            this._applyUrlModelDisplayNameFallbacks(modelInfo, modelId, {
+                                modelNameForApi: modelName || null
+                            });
                         }
+                    } else {
+                        this._applyUrlModelDisplayNameFallbacks(modelInfo, modelId, {
+                            modelNameForApi: modelName || null
+                        });
                     }
                 }
             } catch (error) {
