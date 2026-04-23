@@ -615,11 +615,16 @@ export class ModelsManager {
             if (typeof value === 'object' && value !== null) {
                 if (this._isMetadataPropertyBagLeaf(value)) {
                     // This is a leaf node with properties
+                    const familyAndType =
+                        typeof value["Family and Type"] === "string" && value["Family and Type"].trim()
+                            ? value["Family and Type"].trim()
+                            : null;
                     const node = {
                         id: this._scopeTreeNodeId(modelId, pathKey),
                         label: key,
                         type: 'object',
                         objectId: key,
+                        familyAndType,
                         children: []
                     };
                     nodes.push(node);
