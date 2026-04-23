@@ -457,6 +457,7 @@ export class TreeView {
             const label = document.createElement('span');
             label.className = 'tree-node-label';
             label.textContent = node.label;
+            label.title = node.familyAndType || node.label || '';
             
             // Node count (for categories)
             if (node.children && node.children.length > 0) {
