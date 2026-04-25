@@ -471,6 +471,21 @@ function requireXktSyncAuth(req, res, next) {
     next();
 }
 
+function buildApsSyncOpenUrls(publicBase, xktKey, jsonKey) {
+    const base = String(publicBase || '').replace(/\/$/, '');
+    const modelUrl = `${base}/api/modeldata/xkt/${encodeURIComponent(xktKey)}`;
+    const modelDataUrl = jsonKey
+        ? `${base}/api/modeldata/xkt/${encodeURIComponent(jsonKey)}`
+        : null;
+    const openParams = new URLSearchParams();
+    openParams.set('model', modelUrl);
+    if (modelDataUrl) {
+        openParams.set('modelData', modelDataUrl);
+    }
+    const openUrl = `${base}/?${openParams.toString()}`;
+    return { openUrl, modelUrl, modelDataUrl };
+}
+
 app.post(
     '/api/modeldata/sync-from-aps',
     requireXktSyncAuth,
@@ -517,11 +532,17 @@ app.post(
 
             const publicBase = (process.env.XEOKIT_VIEWER_PUBLIC_URL || '').replace(/\/$/, '')
                 || `${req.protocol}://${req.get('host')}`;
-            const openUrl = `${publicBase}/`;
+            const { openUrl, modelUrl, modelDataUrl } = buildApsSyncOpenUrls(
+                publicBase,
+                xktKey,
+                jsonKey
+            );
 
             res.json({
                 success: true,
                 openUrl,
+                modelUrl,
+                modelDataUrl,
                 xktKey,
                 jsonKey
             });
